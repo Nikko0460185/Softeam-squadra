@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk 'NR==1499,/^}$/ && NR>1500 {count++; if\\(/^}$/ && count==1\\) exit} END{print NR}' /Users/laetitiahume/Desktop/Softeam_SQUADRA/index.html)"
+    ]
+  }
+}

@@ -1,0 +1,2166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SQUADRA — Pilotage & Staffing</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --surface3: #191c29;
+      --border: #2e3250;
+      --accent: #4f6ef7;
+      --accent-soft: rgba(79,110,247,0.15);
+      --green: #22c55e;
+      --green-soft: rgba(34,197,94,0.15);
+      --orange: #f97316;
+      --orange-soft: rgba(249,115,22,0.15);
+      --blue: #38bdf8;
+      --blue-soft: rgba(56,189,248,0.15);
+      --red: #ef4444;
+      --red-soft: rgba(239,68,68,0.15);
+      --yellow: #eab308;
+      --yellow-soft: rgba(234,179,8,0.15);
+      --purple: #a78bfa;
+      --purple-soft: rgba(167,139,250,0.15);
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --radius: 8px;
+      --radius-lg: 12px;
+      --sidebar-w: 260px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header { padding: 20px 16px 16px; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: .05em; }
+    .logo span { color: var(--text-dim); font-weight: 400; font-size: 13px; display: block; margin-top: 2px; }
+
+    .sidebar-section { padding: 12px 16px 6px; }
+    .sidebar-section-title {
+      font-size: 10px; font-weight: 600; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+    }
+
+    .nav-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border-radius: var(--radius); cursor: pointer; font-size: 14px;
+      color: var(--text-dim); transition: all .15s; margin-bottom: 2px;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--accent-soft); color: var(--accent); }
+
+    .consultant-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
+    .consultant-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px;
+      border-radius: var(--radius); cursor: pointer; margin-bottom: 2px; transition: all .15s;
+    }
+    .consultant-item:hover { background: var(--surface2); }
+    .consultant-item.active { background: var(--accent-soft); }
+
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .consultant-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; }
+    .consultant-name small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .btn-add-consultant {
+      margin: 8px 12px; padding: 8px;
+      background: none; border: 1px dashed var(--border); border-radius: var(--radius);
+      color: var(--text-muted); font-size: 13px; cursor: pointer;
+      width: calc(100% - 24px); transition: all .15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-add-consultant:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── TOPBAR ── */
+    #topbar {
+      height: 56px; background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0;
+    }
+    .topbar-title { font-size: 16px; font-weight: 600; flex: 1; }
+
+    .filter-btn {
+      padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+      background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; transition: all .15s;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+    .btn-primary {
+      padding: 7px 14px; background: var(--accent); color: white; border: none;
+      border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer;
+      display: flex; align-items: center; gap: 6px; transition: opacity .15s; flex-shrink: 0;
+    }
+    .btn-primary:hover { opacity: .85; }
+
+    /* ── CONTENT ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ── GANTT ── */
+    #gantt-container { flex: 1; overflow: auto; }
+    #gantt-wrapper { min-width: 100%; position: relative; }
+
+    #gantt-header {
+      display: flex; position: sticky; top: 0; z-index: 10;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .gantt-label-col {
+      min-width: 240px; width: 240px; padding: 10px 16px;
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      border-right: 1px solid var(--border); flex-shrink: 0;
+    }
+    .gantt-months { display: flex; flex: 1; }
+    .gantt-month {
+      flex: 1; min-width: 80px; text-align: center; font-size: 11px;
+      color: var(--text-muted); padding: 8px 4px; border-right: 1px solid var(--border);
+    }
+    .gantt-month.current-month { background: rgba(79,110,247,.05); }
+    .gantt-month-label { font-weight: 600; display: block; }
+    .gantt-month-year { font-size: 10px; opacity: .7; }
+
+    .gantt-row {
+      display: flex; border-bottom: 1px solid var(--border);
+      min-height: 54px; align-items: stretch;
+    }
+    .gantt-row:hover { background: rgba(255,255,255,.015); }
+
+    .gantt-row-label {
+      min-width: 240px; width: 240px; padding: 8px 16px;
+      display: flex; align-items: flex-start; gap: 10px;
+      border-right: 1px solid var(--border); flex-shrink: 0; padding-top: 12px;
+    }
+    .gantt-timeline { flex: 1; position: relative; display: flex; align-items: center; }
+
+    .gantt-grid-line {
+      position: absolute; top: 0; bottom: 0; width: 1px;
+      background: var(--border); opacity: .5; pointer-events: none;
+    }
+    .gantt-today-line {
+      position: absolute; top: 0; bottom: 0; width: 2px;
+      background: var(--accent); opacity: .8; z-index: 2; pointer-events: none;
+    }
+
+    /* BARS */
+    .bar-wrap { position: absolute; display: flex; align-items: center; }
+
+    .prest-bar {
+      height: 28px; border-radius: 4px; display: flex; align-items: center;
+      padding: 0 8px; font-size: 11px; font-weight: 500; cursor: pointer;
+      transition: filter .15s, transform .15s; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis; border: 1px solid transparent;
+      gap: 4px; min-width: 4px;
+    }
+    .prest-bar:hover { filter: brightness(1.2); transform: translateY(-1px); z-index: 5; }
+
+    .bar-en_cours  { background: var(--green-soft);  border-color: var(--green);  color: var(--green); }
+    .bar-terminee  { background: rgba(100,116,139,.15); border-color: #475569; color: #94a3b8; }
+    .bar-opportunite { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+
+    /* Extension bar (lighter, appended after main bar) */
+    .ext-bar {
+      height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
+      border-left: none; display: flex; align-items: center; padding: 0 6px;
+      font-size: 10px; font-weight: 600; opacity: .7; min-width: 4px;
+    }
+    .ext-bar-en_cours  { border-color: var(--green);  color: var(--green);  background: rgba(34,197,94,.06); }
+    .ext-bar-terminee  { border-color: #475569; color: #94a3b8; background: rgba(71,85,105,.08); }
+    .ext-bar-opportunite { border-color: var(--blue); color: var(--blue); background: rgba(56,189,248,.06); }
+
+    /* Early exit: dim tail */
+    .exit-bar {
+      height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
+      border-left: none; display: flex; align-items: center; padding: 0 6px;
+      font-size: 10px; opacity: .35; min-width: 4px;
+      background: repeating-linear-gradient(90deg, transparent 0px, transparent 3px, rgba(100,116,139,.25) 3px, rgba(100,116,139,.25) 4px);
+      border-color: #475569; color: #94a3b8;
+    }
+
+    .bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .bar-en_cours .bar-dot   { background: var(--green); }
+    .bar-terminee .bar-dot   { background: #475569; }
+    .bar-opportunite .bar-dot { background: var(--blue); }
+
+    /* ── LIST VIEW ── */
+    #list-view { flex: 1; overflow-y: auto; padding: 16px 20px; display: none; }
+
+    .list-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden;
+    }
+    .list-card-header {
+      padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+      border-bottom: 1px solid var(--border); background: var(--surface2);
+    }
+    .list-card-body { padding: 4px 0; }
+
+    .prest-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 1fr 90px 90px 36px;
+      align-items: center; gap: 10px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    .prest-row:last-child { border-bottom: none; }
+    .prest-row:hover { background: rgba(255,255,255,.02); }
+
+    .prest-header-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 1fr 90px 90px 36px;
+      gap: 10px; padding: 6px 16px;
+      font-size: 10px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; color: var(--text-muted);
+      border-bottom: 1px solid var(--border); background: var(--surface3);
+    }
+
+    .status-pill {
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; flex-shrink: 0; display: inline-block; text-align: center;
+    }
+    .pill-en_cours    { background: var(--green-soft); color: var(--green); }
+    .pill-terminee    { background: rgba(100,116,139,.15); color: #94a3b8; }
+    .pill-opportunite { background: var(--blue-soft); color: var(--blue); }
+
+    .prest-client { font-weight: 600; font-size: 13px; }
+    .prest-client small { display: block; font-size: 11px; color: var(--text-muted); font-weight: 400; }
+
+    .prest-dates { font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+    .prest-dates .ext-label { color: var(--orange); font-size: 10px; }
+    .prest-dates .exit-label { color: var(--red); font-size: 10px; }
+
+    .prest-tjm { font-size: 13px; font-weight: 700; color: var(--accent); text-align: right; }
+    .prest-tjm small { display: block; font-size: 10px; color: var(--text-muted); font-weight: 400; }
+
+    .btn-icon {
+      width: 28px; height: 28px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: none; color: var(--text-muted);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all .15s; flex-shrink: 0;
+    }
+    .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── STATS VIEW ── */
+    #stats-view { flex: 1; overflow-y: auto; padding: 16px 20px; display: none; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 16px;
+    }
+    .stat-label { font-size: 11px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+    .stat-value { font-size: 28px; font-weight: 700; }
+    .stat-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 100;
+      display: none; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); width: 100%; max-height: 92vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    #prest-modal-box { max-width: 580px; }
+    #cons-modal-box  { max-width: 400px; }
+
+    .modal-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .modal-footer {
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0;
+    }
+
+    /* FORM */
+    .form-group { margin-bottom: 14px; }
+    .form-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block; }
+    .form-label .opt { font-weight: 400; color: var(--text-muted); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    .form-input, .form-select, .form-textarea {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 13px;
+      padding: 8px 10px; outline: none; transition: border-color .15s; font-family: inherit;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+    .form-textarea { resize: vertical; min-height: 60px; }
+    .form-select option { background: var(--surface2); }
+
+    /* SECTION DIVIDER */
+    .form-section {
+      margin: 18px -20px 16px; padding: 7px 20px;
+      background: var(--surface2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted);
+    }
+
+    /* TOGGLE OPTION */
+    .toggle-option {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; margin-bottom: 8px;
+    }
+    .toggle-header {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+      cursor: pointer; user-select: none; transition: background .15s;
+    }
+    .toggle-header:hover { background: var(--surface2); }
+    .toggle-header.active { background: var(--accent-soft); }
+
+    .toggle-check {
+      width: 16px; height: 16px; border-radius: 4px;
+      border: 2px solid var(--border); background: none;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all .15s;
+    }
+    .toggle-check.checked { background: var(--accent); border-color: var(--accent); }
+
+    .toggle-label { font-size: 13px; font-weight: 500; flex: 1; }
+    .toggle-badge { font-size: 11px; color: var(--text-muted); }
+
+    .toggle-body { padding: 12px; border-top: 1px solid var(--border); background: var(--surface3); display: none; }
+    .toggle-body.open { display: block; }
+
+    /* TJM REVISIONS */
+    .revision-list { margin-top: 4px; }
+    .revision-item {
+      display: flex; align-items: center; gap: 8px; padding: 7px 0;
+      border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .revision-item:last-child { border-bottom: none; }
+    .revision-date { color: var(--text-dim); font-size: 12px; flex-shrink: 0; }
+    .revision-tjm { font-weight: 700; color: var(--accent); flex: 1; }
+    .revision-delta { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+    .delta-up   { background: var(--green-soft); color: var(--green); }
+    .delta-down { background: var(--red-soft); color: var(--red); }
+
+    .add-revision-row { display: flex; gap: 8px; margin-top: 10px; align-items: flex-end; }
+    .add-revision-row .form-input { flex: 1; }
+    .btn-add-small {
+      padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text-dim); font-size: 13px;
+      cursor: pointer; flex-shrink: 0; transition: all .15s; white-space: nowrap;
+    }
+    .btn-add-small:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-secondary {
+      padding: 7px 14px; background: none; color: var(--text-dim);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      font-size: 13px; cursor: pointer; transition: all .15s;
+    }
+    .btn-secondary:hover { border-color: var(--text-dim); color: var(--text); }
+
+    .btn-danger {
+      padding: 7px 14px; background: var(--red-soft); color: var(--red);
+      border: 1px solid var(--red); border-radius: var(--radius);
+      font-size: 13px; cursor: pointer; margin-right: auto;
+    }
+    .btn-danger:hover { opacity: .8; }
+
+    /* LEGEND */
+    .legend { display: flex; gap: 14px; align-items: center; padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid; }
+
+    /* ── STATS VIEW ── */
+    #stats-view { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .stats-toolbar {
+      padding: 10px 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface); display: flex; align-items: center;
+      gap: 8px; flex-shrink: 0; flex-wrap: wrap;
+    }
+    .stats-scroll { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+    .period-tab {
+      padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border);
+      background: none; color: var(--text-dim); font-size: 12px;
+      cursor: pointer; transition: all .15s;
+    }
+    .period-tab:hover { border-color: var(--accent); color: var(--accent); }
+    .period-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+    .chart-container {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px;
+    }
+    .chart-title {
+      font-size: 12px; font-weight: 700; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 14px;
+    }
+
+    /* Occupation table */
+    .occ-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .occ-table th {
+      padding: 7px 10px; text-align: center; color: var(--text-muted);
+      font-weight: 700; font-size: 10px; text-transform: uppercase;
+      letter-spacing: .06em; background: var(--surface2);
+      border: 1px solid var(--border); white-space: nowrap;
+    }
+    .occ-table th:first-child { text-align: left; min-width: 180px; }
+    .occ-table td {
+      padding: 7px 10px; border: 1px solid var(--border);
+      text-align: center; font-size: 12px; white-space: nowrap;
+    }
+    .occ-table td:first-child { text-align: left; }
+    .occ-table tfoot td { font-weight: 600; background: var(--surface2); font-size: 11px; }
+    .occ-table tfoot td:first-child { color: var(--text-muted); }
+    .occ-cur { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .occ-full  { background: var(--green-soft);  color: var(--green);  font-weight: 700; }
+    .occ-4     { background: rgba(34,197,94,.12); color: var(--green);  font-weight: 600; }
+    .occ-3     { background: var(--yellow-soft); color: var(--yellow); font-weight: 600; }
+    .occ-over  { background: var(--orange-soft); color: var(--orange); font-weight: 700; }
+    .occ-empty { color: var(--text-muted); }
+
+    /* Upcoming events */
+    .event-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .event-row:last-child { border-bottom: none; }
+    .event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .event-days {
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+      min-width: 40px; text-align: right;
+    }
+
+    /* Nature badges */
+    .nature-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700;
+      letter-spacing: .03em; text-transform: uppercase; flex-shrink: 0;
+    }
+    .nature-mission        { background: var(--accent-soft); color: var(--accent); }
+    .nature-forfait        { background: var(--purple-soft);  color: var(--purple); }
+    .nature-projet_interne { background: var(--yellow-soft);  color: var(--yellow); }
+
+    /* Client breakdown table */
+    .client-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .client-table th {
+      padding: 7px 12px; text-align: left; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+      background: var(--surface2); border-bottom: 1px solid var(--border);
+    }
+    .client-table th:not(:first-child) { text-align: right; }
+    .client-table td {
+      padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle;
+    }
+    .client-table td:not(:first-child) { text-align: right; }
+    .client-table tr:last-child td { border-bottom: none; }
+    .client-table tr:hover td { background: rgba(255,255,255,.02); }
+
+    /* TOAST */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 16px; font-size: 13px;
+      z-index: 200; display: none; gap: 8px; align-items: center;
+    }
+    #toast.show { display: flex; }
+    #toast.success { border-color: var(--green); }
+    #toast.error   { border-color: var(--red); }
+
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 10px; padding: 60px;
+      color: var(--text-muted); text-align: center;
+    }
+    .empty-state h3 { font-size: 16px; color: var(--text-dim); }
+    .empty-state p { font-size: 13px; max-width: 300px; line-height: 1.6; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">SQUADRA <span>Pilotage & Staffing</span></div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Navigation</div>
+    <div class="nav-item active" data-view="gantt" onclick="switchView('gantt')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="3" rx="1"/><rect x="3" y="10" width="12" height="3" rx="1"/><rect x="3" y="16" width="15" height="3" rx="1"/></svg>
+      Timeline Gantt
+    </div>
+    <div class="nav-item" data-view="list" onclick="switchView('list')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Vue liste
+    </div>
+    <div class="nav-item" data-view="stats" onclick="switchView('stats')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Statistiques
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Consultants (<span id="cons-count">0</span>)</div>
+  </div>
+  <div class="consultant-list" id="cons-list"></div>
+  <button class="btn-add-consultant" onclick="openConsModal()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Ajouter un consultant
+  </button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="topbar">
+    <div class="topbar-title" id="topbar-title">Vue globale</div>
+    <div style="display:flex;gap:6px" id="status-filters">
+      <button class="filter-btn active" data-s="all"         onclick="setFilter('all')">Tous</button>
+      <button class="filter-btn"        data-s="en_cours"    onclick="setFilter('en_cours')">En cours</button>
+      <button class="filter-btn"        data-s="opportunite" onclick="setFilter('opportunite')">Opportunités</button>
+      <button class="filter-btn"        data-s="terminee"    onclick="setFilter('terminee')">Terminées</button>
+    </div>
+    <button class="btn-primary" onclick="openPrestModal(null)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nouvelle prestation
+    </button>
+  </div>
+
+  <div id="content">
+    <!-- GANTT -->
+    <div id="gantt-container">
+      <div class="legend">
+        <span style="font-size:11px;color:var(--text-muted);font-weight:600;margin-right:4px">Légende :</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--green-soft);border-color:var(--green)"></span>En cours</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--blue-soft);border-color:var(--blue)"></span>Opportunité</span>
+        <span class="legend-item"><span class="legend-dot" style="background:rgba(100,116,139,.15);border-color:#475569"></span>Terminée</span>
+        <span class="legend-item"><span class="legend-dot" style="background:rgba(34,197,94,.06);border-color:var(--green);border-style:dashed"></span>Prolongation</span>
+        <span class="legend-item"><span class="legend-dot" style="background:repeating-linear-gradient(90deg,transparent 0,transparent 2px,rgba(100,116,139,.3) 2px,rgba(100,116,139,.3) 3px);border-color:#475569;border-style:dashed;opacity:.6"></span>Fin anticipée (période annulée)</span>
+      </div>
+      <div id="gantt-scroll" style="overflow:auto;flex:1">
+        <div id="gantt-wrapper">
+          <div id="gantt-header">
+            <div class="gantt-label-col">Consultant</div>
+            <div class="gantt-months" id="gantt-months"></div>
+          </div>
+          <div id="gantt-rows"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIST -->
+    <div id="list-view"></div>
+
+    <!-- STATS -->
+    <div id="stats-view"></div>
+  </div>
+</div>
+
+<!-- PRESTATION MODAL -->
+<div class="modal-overlay" id="prest-overlay" onclick="overlayClick(event,'prest-overlay')">
+  <div class="modal-box" id="prest-modal-box">
+    <div class="modal-header">
+      <h2 id="prest-modal-title">Nouvelle prestation</h2>
+      <button class="btn-icon" onclick="closeModal('prest-overlay')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="f-id" />
+
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">Consultant *</label>
+          <select class="form-select" id="f-cons"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Statut *</label>
+          <select class="form-select" id="f-status">
+            <option value="en_cours">En cours</option>
+            <option value="opportunite">Opportunité</option>
+            <option value="terminee">Terminée</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nature</label>
+          <select class="form-select" id="f-nature">
+            <option value="mission">Mission (régie)</option>
+            <option value="forfait">Forfait</option>
+            <option value="projet_interne">Projet interne</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Client *</label>
+          <input type="text" class="form-input" id="f-client" placeholder="Société Générale" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Service client <span class="opt">(optionnel)</span></label>
+          <input type="text" class="form-input" id="f-service" placeholder="DSI — Pôle Data" />
+        </div>
+      </div>
+
+      <div class="form-section">Dates</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date de début *</label>
+          <input type="date" class="form-input" id="f-start" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Date de fin prévue *</label>
+          <input type="date" class="form-input" id="f-end" />
+        </div>
+      </div>
+
+      <!-- PROLONGATION -->
+      <div class="toggle-option" id="ext-toggle-wrap">
+        <div class="toggle-header" id="ext-toggle-header" onclick="toggleOption('ext')">
+          <div class="toggle-check" id="ext-check"></div>
+          <span class="toggle-label">Prolongation</span>
+          <span class="toggle-badge" id="ext-badge">désactivée</span>
+        </div>
+        <div class="toggle-body" id="ext-body">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Nouvelle date de fin</label>
+            <input type="date" class="form-input" id="f-ext-date" oninput="updateBadges()" />
+          </div>
+        </div>
+      </div>
+
+      <!-- SORTIE ANTICIPÉE -->
+      <div class="toggle-option" id="exit-toggle-wrap" style="margin-top:8px">
+        <div class="toggle-header" id="exit-toggle-header" onclick="toggleOption('exit')">
+          <div class="toggle-check" id="exit-check"></div>
+          <span class="toggle-label">Sortie anticipée</span>
+          <span class="toggle-badge" id="exit-badge">désactivée</span>
+        </div>
+        <div class="toggle-body" id="exit-body">
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Date de sortie</label>
+            <input type="date" class="form-input" id="f-exit-date" oninput="updateBadges()" />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">Tarification</div>
+
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">TJM initial (€/j) *</label>
+          <input type="number" class="form-input" id="f-tjm" placeholder="650" min="0" oninput="updateBadges()" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Taux d'activité</label>
+          <select class="form-select" id="f-fte">
+            <option value="5">5/5 — Plein temps</option>
+            <option value="4">4/5 — Partiel</option>
+            <option value="3">3/5 — Partiel</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <div id="current-tjm-display" style="font-size:12px;color:var(--text-muted);padding-bottom:4px"></div>
+        </div>
+      </div>
+
+      <div class="form-label" style="margin-bottom:8px">Révisions TJM <span class="opt" style="font-weight:400">(date de mise en place + nouveau taux)</span></div>
+      <div class="revision-list" id="revision-list"></div>
+      <div class="add-revision-row">
+        <div style="flex:1">
+          <div class="form-label" style="font-size:11px;margin-bottom:4px">Date de mise en place</div>
+          <input type="date" class="form-input" id="rev-date" />
+        </div>
+        <div style="flex:1">
+          <div class="form-label" style="font-size:11px;margin-bottom:4px">Nouveau TJM (€/j)</div>
+          <input type="number" class="form-input" id="rev-tjm" placeholder="700" min="0" />
+        </div>
+        <button class="btn-add-small" onclick="addRevision()">+ Ajouter</button>
+      </div>
+
+      <div class="form-section" style="margin-top:18px">Notes</div>
+      <div class="form-group" style="margin-top:2px">
+        <textarea class="form-textarea" id="f-notes" placeholder="Contacts, informations importantes…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="btn-del-prest" onclick="deletePrestation()" style="display:none">Supprimer</button>
+      <button class="btn-secondary" onclick="closeModal('prest-overlay')">Annuler</button>
+      <button class="btn-primary" onclick="savePrestation()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONSULTANT MODAL -->
+<div class="modal-overlay" id="cons-overlay" onclick="overlayClick(event,'cons-overlay')">
+  <div class="modal-box" id="cons-modal-box">
+    <div class="modal-header">
+      <h2 id="cons-modal-title">Nouveau consultant</h2>
+      <button class="btn-icon" onclick="closeModal('cons-overlay')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cf-id" />
+      <div class="form-group">
+        <label class="form-label">Prénom & Nom *</label>
+        <input type="text" class="form-input" id="cf-name" placeholder="Jean Dupont" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rôle / Expertise</label>
+        <input type="text" class="form-input" id="cf-role" placeholder="Développeur Senior, Chef de projet…" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="cf-email" placeholder="jean.dupont@example.com" />
+      </div>
+      <div class="form-section" style="margin:14px -20px 14px">Tarification interne</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Coût complet (€/j) <span class="opt">(optionnel)</span></label>
+          <input type="number" class="form-input" id="cf-cout-complet" placeholder="400" min="0" oninput="updateTcDisplay()" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Coût employeur total par jour travaillé</div>
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;justify-content:center">
+          <div id="cf-tc-display" style="font-size:13px;color:var(--text-muted)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="btn-del-cons" onclick="deleteConsultant()" style="display:none">Supprimer</button>
+      <button class="btn-secondary" onclick="closeModal('cons-overlay')">Annuler</button>
+      <button class="btn-primary" onclick="saveConsultant()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const COLORS = ['#818cf8','#34d399','#fb923c','#f472b6','#a78bfa','#22d3ee','#4ade80','#fbbf24','#60a5fa','#f87171'];
+const GANTT_MONTHS = 15;
+const GANTT_OFFSET = -2; // start 2 months before today
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let S = { consultants: [], prestations: [] };
+let filterCons   = null;  // null = all
+let filterStatus = 'all';
+let currentView  = 'gantt';
+
+// Temp modal state
+let modalRevisions = []; // [{date, tjm}]
+let extActive  = false;
+let exitActive = false;
+let statsPeriod = 'quarterly'; // 'quarterly' | '5y' | '10y'
+
+// ─── PERSISTENCE ─────────────────────────────────────────────────────────────
+function load() {
+  try { const s = localStorage.getItem('squadra_v2'); if (s) S = JSON.parse(s); } catch(e) {}
+}
+function save() { localStorage.setItem('squadra_v2', JSON.stringify(S)); }
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function consColor(id) {
+  const i = S.consultants.findIndex(c => c.id === id);
+  return COLORS[i % COLORS.length];
+}
+
+function initials(name) {
+  return name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+}
+
+function fmtD(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('fr-FR', { day:'2-digit', month:'short', year:'2-digit' });
+}
+
+function statusLabel(s) {
+  return { en_cours:'En cours', terminee:'Terminée', opportunite:'Opportunité' }[s] || s;
+}
+function natureLabel(n) {
+  return { mission:'Mission', forfait:'Forfait', projet_interne:'Projet interne' }[n] || 'Mission';
+}
+function natureBadge(n) {
+  const lbl = natureLabel(n || 'mission');
+  return `<span class="nature-badge nature-${n||'mission'}">${lbl}</span>`;
+}
+
+// Effective end date: earlyExit > extension > planned
+function effectiveEnd(p) {
+  if (p.earlyExit?.active && p.earlyExit?.date) return p.earlyExit.date;
+  if (p.extension?.active && p.extension?.date)  return p.extension.date;
+  return p.endDate;
+}
+
+// Current TJM = last applicable revision or base TJM
+function currentTjm(p) {
+  const today = new Date().toISOString().slice(0,10);
+  if (!p.tjmRevisions?.length) return p.tjm;
+  const past = p.tjmRevisions.filter(r => r.date <= today);
+  return past.length ? past[past.length-1].tjm : p.tjm;
+}
+
+// ─── DEMO DATA ───────────────────────────────────────────────────────────────
+function seedDemo() {
+  const ids = [genId(), genId(), genId(), genId()];
+  S.consultants = [
+    { id: ids[0], name: 'Sophie Martin',   role: 'Lead Développeuse',  coutComplet: 450 },
+    { id: ids[1], name: 'Thomas Bernard',  role: 'Chef de Projet',     coutComplet: 420 },
+    { id: ids[2], name: 'Camille Petit',   role: 'Data Engineer',      coutComplet: 410 },
+    { id: ids[3], name: 'Antoine Dubois',  role: 'Architecte Cloud',   coutComplet: 480 },
+  ];
+  const n = new Date();
+  const y = n.getFullYear(), m = n.getMonth();
+  const d = (yr,mo,da) => new Date(yr,mo,da).toISOString().slice(0,10);
+
+  S.prestations = [
+    {
+      id: genId(), consultantId: ids[0],
+      client: 'Société Générale', clientService: 'DSI — Pôle API',
+      status: 'en_cours',
+      startDate: d(y,m-3,1), endDate: d(y,m+3,30),
+      extension:  { active: true,  date: d(y,m+6,30) },
+      earlyExit:  { active: false, date: '' },
+      tjm: 700, fte: 5, nature: 'mission', tjmRevisions: [{ date: d(y,m-1,1), tjm: 720 }],
+      notes: 'Extension confirmée pour Q4'
+    },
+    {
+      id: genId(), consultantId: ids[0],
+      client: 'BNP Paribas', clientService: 'CIB Digital',
+      status: 'opportunite',
+      startDate: d(y,m+7,1), endDate: d(y+1,m+2,28),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: false, date: '' },
+      tjm: 750, fte: 5, nature: 'forfait', tjmRevisions: [],
+      notes: 'RFP reçu — en cours de négociation'
+    },
+    {
+      id: genId(), consultantId: ids[1],
+      client: 'Orange', clientService: 'PMO DSI',
+      status: 'terminee',
+      startDate: d(y,m-7,1), endDate: d(y,m-2,28),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: false, date: '' },
+      tjm: 620, fte: 5, nature: 'mission', tjmRevisions: [{ date: d(y,m-4,1), tjm: 650 }],
+      notes: ''
+    },
+    {
+      id: genId(), consultantId: ids[1],
+      client: 'Carrefour', clientService: 'Digital & IT',
+      status: 'en_cours',
+      startDate: d(y,m,1), endDate: d(y,m+7,31),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: false, date: '' },
+      tjm: 680, fte: 4, nature: 'mission', tjmRevisions: [],
+      notes: 'Renouvellement trimestriel prévu — 4/5'
+    },
+    {
+      id: genId(), consultantId: ids[2],
+      client: 'TotalEnergies', clientService: 'Data & Analytics',
+      status: 'en_cours',
+      startDate: d(y,m-2,15), endDate: d(y,m+5,14),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: true,  date: d(y,m+2,28) },
+      tjm: 690, fte: 5, nature: 'forfait', tjmRevisions: [],
+      notes: 'Sortie anticipée négociée'
+    },
+    {
+      id: genId(), consultantId: ids[3],
+      client: 'Airbus', clientService: 'IT Infrastructure',
+      status: 'opportunite',
+      startDate: d(y,m+2,1), endDate: d(y,m+11,30),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: false, date: '' },
+      tjm: 800, fte: 5, nature: 'mission', tjmRevisions: [],
+      notes: 'Démarrage conditionné à la validation budget'
+    },
+    {
+      id: genId(), consultantId: ids[3],
+      client: 'SNCF', clientService: 'Systèmes Embarqués',
+      status: 'terminee',
+      startDate: d(y,m-6,1), endDate: d(y,m-3,31),
+      extension:  { active: false, date: '' },
+      earlyExit:  { active: false, date: '' },
+      tjm: 730, fte: 5, nature: 'mission', tjmRevisions: [],
+      notes: ''
+    },
+  ];
+  save();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+load();
+if (!S.consultants?.length) seedDemo();
+render();
+
+// ─── RENDER DISPATCHER ───────────────────────────────────────────────────────
+function render() {
+  renderSidebar();
+  if      (currentView === 'gantt') renderGantt();
+  else if (currentView === 'list')  renderList();
+  else                               renderStats();
+}
+
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+function renderSidebar() {
+  document.getElementById('cons-count').textContent = S.consultants.length;
+  const el = document.getElementById('cons-list');
+  el.innerHTML = '';
+
+  // All
+  const all = document.createElement('div');
+  all.className = 'consultant-item' + (filterCons === null ? ' active' : '');
+  all.innerHTML = `
+    <div class="avatar" style="background:var(--surface2);color:var(--text-dim)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </div>
+    <div class="consultant-name">Toute l'équipe</div>`;
+  all.onclick = () => { filterCons = null; render(); };
+  el.appendChild(all);
+
+  S.consultants.forEach(c => {
+    const color = consColor(c.id);
+    const item  = document.createElement('div');
+    item.className = 'consultant-item' + (filterCons === c.id ? ' active' : '');
+    item.innerHTML = `
+      <div class="avatar" style="background:${color}22;color:${color}">${initials(c.name)}</div>
+      <div class="consultant-name">${c.name}<small>${c.role || ''}</small></div>
+      <button class="btn-icon" onclick="event.stopPropagation();openConsModal('${c.id}')" title="Modifier">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>`;
+    item.onclick = () => { filterCons = c.id; render(); };
+    el.appendChild(item);
+  });
+}
+
+// ─── GANTT ────────────────────────────────────────────────────────────────────
+function renderGantt() {
+  const today = new Date();
+  const rangeStart = new Date(today.getFullYear(), today.getMonth() + GANTT_OFFSET, 1);
+  const months = [];
+  for (let i = 0; i < GANTT_MONTHS; i++) {
+    months.push(new Date(rangeStart.getFullYear(), rangeStart.getMonth() + i, 1));
+  }
+  const rangeEnd = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + GANTT_MONTHS, 0);
+  const totalDays = (rangeEnd - rangeStart) / 86400000 + 1;
+
+  function px(dateStr) {
+    const days = (new Date(dateStr + 'T00:00:00') - rangeStart) / 86400000;
+    return Math.max(0, Math.min(100, days / totalDays * 100));
+  }
+  function clamp(v) { return Math.max(0, Math.min(100, v)); }
+
+  // Header
+  const mEl = document.getElementById('gantt-months');
+  mEl.innerHTML = '';
+  months.forEach(m => {
+    const isCurrent = m.getFullYear() === today.getFullYear() && m.getMonth() === today.getMonth();
+    const div = document.createElement('div');
+    div.className = 'gantt-month' + (isCurrent ? ' current-month' : '');
+    div.innerHTML = `<span class="gantt-month-label">${m.toLocaleDateString('fr-FR',{month:'short'})}</span><span class="gantt-month-year">${m.getFullYear()}</span>`;
+    mEl.appendChild(div);
+  });
+
+  const todayPct = px(today.toISOString().slice(0,10));
+  const cons = filterCons ? S.consultants.filter(c => c.id === filterCons) : S.consultants;
+  const rows = document.getElementById('gantt-rows');
+  rows.innerHTML = '';
+
+  if (!cons.length) {
+    rows.innerHTML = `<div class="empty-state"><h3>Aucun consultant</h3><p>Ajoutez des consultants depuis le panneau gauche.</p></div>`;
+    return;
+  }
+
+  cons.forEach(c => {
+    const color = consColor(c.id);
+    const prests = S.prestations.filter(p => p.consultantId === c.id && matchFilter(p));
+    const stacked = stackBars(prests);
+    const rowH = Math.max(54, stacked.length * 40 + 14);
+
+    const row = document.createElement('div');
+    row.className = 'gantt-row';
+    row.style.minHeight = rowH + 'px';
+    row.innerHTML = `
+      <div class="gantt-row-label" style="min-height:${rowH}px">
+        <div class="avatar" style="background:${color}22;color:${color};margin-top:2px">${initials(c.name)}</div>
+        <div>
+          <div style="font-size:13px;font-weight:500">${c.name}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${c.role||''}</div>
+        </div>
+      </div>
+      <div class="gantt-timeline" id="tl-${c.id}" style="min-height:${rowH}px"></div>`;
+    rows.appendChild(row);
+
+    const tl = document.getElementById(`tl-${c.id}`);
+
+    // Grid lines + today
+    months.forEach((_, i) => {
+      const l = document.createElement('div');
+      l.className = 'gantt-grid-line';
+      l.style.left = (i / GANTT_MONTHS * 100) + '%';
+      tl.appendChild(l);
+    });
+    if (todayPct > 0 && todayPct < 100) {
+      const t = document.createElement('div');
+      t.className = 'gantt-today-line';
+      t.style.left = todayPct + '%';
+      t.title = "Aujourd'hui";
+      tl.appendChild(t);
+    }
+
+    // Bars — each segment positioned absolutely (left/width as % of timeline)
+    stacked.forEach((stackRow, rowIdx) => {
+      stackRow.forEach(p => {
+        const startPct = px(p.startDate);
+        const endPct   = px(p.endDate);
+        const top      = 12 + rowIdx * 40;
+        const label    = p.client + (p.clientService ? ` · ${p.clientService}` : '');
+        const tt       = buildTooltip(p, c);
+        const pId      = p.id;
+
+        const maxRight = Math.max(endPct,
+          p.extension?.active && p.extension.date ? px(p.extension.date) : endPct);
+        if (maxRight <= 0 || startPct >= 100) return;
+
+        function seg(cls, left, width, extraStyle, html) {
+          if (width <= 0) return;
+          const el = document.createElement('div');
+          el.className = cls;
+          el.style.cssText = `position:absolute;left:${left}%;width:${Math.max(0.4,width)}%;top:${top}px;${extraStyle||''}`;
+          el.innerHTML = html || '';
+          el.title = tt;
+          el.onclick = () => openPrestModal(S.prestations.find(x => x.id === pId));
+          tl.appendChild(el);
+        }
+
+        if (p.extension?.active && p.extension?.date && p.extension.date > p.endDate) {
+          const mainL = clamp(startPct);
+          const mainW = clamp(endPct) - mainL;
+          const extL  = clamp(endPct);
+          const extW  = clamp(px(p.extension.date)) - extL;
+          seg(`prest-bar bar-${p.status}`, mainL, mainW,
+            extW > 0 ? 'border-radius:4px 0 0 4px;' : '',
+            `<div class="bar-dot"></div>${label}`);
+          if (extW > 0)
+            seg(`ext-bar ext-bar-${p.status}`, extL, extW, '', `↗ ${fmtD(p.extension.date)}`);
+
+        } else if (p.earlyExit?.active && p.earlyExit?.date && p.earlyExit.date < p.endDate) {
+          const exitPct = px(p.earlyExit.date);
+          const mainL   = clamp(startPct);
+          const mainW   = clamp(exitPct) - mainL;
+          const tailL   = clamp(exitPct);
+          const tailW   = clamp(endPct) - tailL;
+          seg(`prest-bar bar-${p.status}`, mainL, mainW,
+            tailW > 0 ? 'border-radius:4px 0 0 4px;' : '',
+            `<div class="bar-dot"></div>${label}`);
+          if (tailW > 0)
+            seg('exit-bar', tailL, tailW, '', '');
+
+        } else {
+          const effPct = px(effectiveEnd(p));
+          seg(`prest-bar bar-${p.status}`, clamp(startPct), clamp(effPct) - clamp(startPct), '',
+            `<div class="bar-dot"></div>${label}`);
+        }
+      });
+    });
+  });
+
+  document.getElementById('topbar-title').textContent =
+    filterCons ? S.consultants.find(c=>c.id===filterCons)?.name || '' : 'Vue globale';
+}
+
+function buildTooltip(p, c) {
+  let lines = [`${c.name}`, `${p.client}${p.clientService ? ' / '+p.clientService : ''}`,
+    `${fmtD(p.startDate)} → ${fmtD(p.endDate)}`];
+  if (p.extension?.active && p.extension.date) lines.push(`Prolongé jusqu'au ${fmtD(p.extension.date)}`);
+  if (p.earlyExit?.active && p.earlyExit.date)  lines.push(`Sortie anticipée: ${fmtD(p.earlyExit.date)}`);
+  lines.push(`TJM: ${currentTjm(p).toLocaleString('fr-FR')} €/j`);
+  return lines.join('\n');
+}
+
+function stackBars(prests) {
+  const sorted = [...prests].sort((a,b) => a.startDate.localeCompare(b.startDate));
+  const result = [];
+  sorted.forEach(p => {
+    const pEnd = effectiveEnd(p);
+    let placed = false;
+    for (let i = 0; i < result.length; i++) {
+      const last = result[i][result[i].length - 1];
+      if (p.startDate >= effectiveEnd(last)) { result[i].push(p); placed = true; break; }
+    }
+    if (!placed) result.push([p]);
+  });
+  return result;
+}
+
+// ─── LIST VIEW ────────────────────────────────────────────────────────────────
+function renderList() {
+  const el = document.getElementById('list-view');
+  el.innerHTML = '';
+  const cons = filterCons ? S.consultants.filter(c=>c.id===filterCons) : S.consultants;
+
+  cons.forEach(c => {
+    const color = consColor(c.id);
+    const prests = S.prestations.filter(p => p.consultantId === c.id && matchFilter(p))
+      .sort((a,b) => b.startDate.localeCompare(a.startDate));
+
+    const card = document.createElement('div');
+    card.className = 'list-card';
+
+    let rows = '';
+    if (!prests.length) {
+      rows = `<div style="padding:14px 16px;font-size:13px;color:var(--text-muted)">Aucune prestation${filterStatus!=='all'?' pour ce filtre':''}</div>`;
+    } else {
+      rows += `<div class="prest-header-row" style="grid-template-columns:80px 80px 1fr 1fr 80px 80px 36px"><span>Statut</span><span>Nature</span><span>Client / Service</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span></div>`;
+      prests.forEach(p => {
+        const tjmCur = currentTjm(p);
+        const tjmBase = p.tjm;
+        const hasRevision = p.tjmRevisions?.length > 0;
+        let dateLine = `${fmtD(p.startDate)} → ${fmtD(p.endDate)}`;
+        let modifiers = '';
+        if (p.extension?.active && p.extension.date)
+          modifiers += `<div class="ext-label">↗ Prolongé → ${fmtD(p.extension.date)}</div>`;
+        if (p.earlyExit?.active && p.earlyExit.date)
+          modifiers += `<div class="exit-label">↙ Sortie anticipée → ${fmtD(p.earlyExit.date)}</div>`;
+
+        const pId = p.id;
+        rows += `
+          <div class="prest-row" style="grid-template-columns:80px 80px 1fr 1fr 80px 80px 36px">
+            <span class="status-pill pill-${p.status}">${statusLabel(p.status)}</span>
+            ${natureBadge(p.nature)}
+            <div class="prest-client">${p.client}<small>${p.clientService||''}</small></div>
+            <div class="prest-dates">${dateLine}${modifiers}</div>
+            <div class="prest-tjm">${tjmCur.toLocaleString('fr-FR')} €/j<small>${hasRevision?`base: ${tjmBase.toLocaleString('fr-FR')} €`:''}</small></div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-dim);text-align:right">${(p.fte||5)}/5</div>
+            <button class="btn-icon" onclick="openPrestModal(S.prestations.find(x=>x.id==='${pId}'))" title="Modifier">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>`;
+      });
+    }
+
+    card.innerHTML = `
+      <div class="list-card-header">
+        <div class="avatar" style="background:${color}22;color:${color}">${initials(c.name)}</div>
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600">${c.name}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${c.role||''}</div>
+        </div>
+        <button class="btn-primary" style="padding:5px 10px;font-size:12px" onclick="openPrestModal(null,'${c.id}')">+ Prestation</button>
+      </div>
+      <div class="list-card-body">${rows}</div>`;
+    el.appendChild(card);
+  });
+}
+
+// ─── STATS VIEW — section builders ────────────────────────────────────────────
+
+function buildKpiStrip(kd, curPD, wLabel, wPeriod, cons, allOpps) {
+  const occColor      = kd.occRate >= 80 ? 'var(--green)' : kd.occRate >= 50 ? 'var(--yellow)' : 'var(--red)';
+  const hasFinData    = kd.masseSalariale > 0;
+  const margeCol      = (kd.margeVal ?? 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const margePctColor = (kd.margePctVal ?? 0) >= 20 ? 'var(--green)' : (kd.margePctVal ?? 0) >= 10 ? 'var(--yellow)' : 'var(--red)';
+  const caTotal       = kd.caTotal || 0;
+  const tauxCouv      = kd.ca > 0 && caTotal > 0 ? Math.round(kd.caPipeline / kd.ca * 100) : null;
+
+  let alertHtml = '';
+  if (hasFinData && kd.caCible > 0) {
+    const ecart    = kd.ca - kd.caCible;
+    const ecartPct = Math.round(Math.abs(ecart) / kd.caCible * 100);
+    const ok       = ecart >= 0;
+    const color    = ok ? 'var(--green)' : 'var(--orange)';
+    const bg       = ok ? 'var(--green-soft)' : 'var(--orange-soft)';
+    const msg = ok
+      ? '<strong style="color:var(--green)">Objectif tarif dépassé</strong> · CA confirmé supérieur de ' + ecartPct + '% (' + Math.round(ecart).toLocaleString('fr-FR') + ' €) au tarif cible — marge 32% couverte.'
+      : '<strong style="color:var(--orange)">Ecart vs objectif : ' + Math.round(-ecart).toLocaleString('fr-FR') + ' €</strong> (−' + ecartPct + '%) · En-dessous du tarif cible. Remonter les TJM ou signer le pipeline.';
+    alertHtml = '<div style="background:' + bg + ';border:1px solid ' + color + ';border-radius:var(--radius);padding:10px 14px;margin-bottom:20px;font-size:12px;display:flex;align-items:center;gap:10px">'
+      + '<span style="font-size:18px;flex-shrink:0">' + (ok ? '✓' : '→') + '</span>'
+      + '<span>' + msg + '</span></div>';
+  }
+
+  const finCards = hasFinData ? `
+      <div class="stat-card">
+        <div class="stat-label">Masse salariale</div>
+        <div class="stat-value" style="color:var(--orange)">${Math.round(kd.masseSalariale).toLocaleString('fr-FR')} €</div>
+        <div class="stat-sub">Coût employeur · ${wLabel} j/${wPeriod}/pers.</div>
+      </div>
+      <div class="stat-card" style="border-color:${margeCol}">
+        <div class="stat-label">Marge brute</div>
+        <div class="stat-value" style="color:${margeCol}">${kd.margeVal !== null ? Math.round(kd.margeVal).toLocaleString('fr-FR')+' €' : '—'}</div>
+        <div class="stat-sub">CA confirmé − masse salariale</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Taux de marge</div>
+        <div class="stat-value" style="color:${margePctColor}">${kd.margePctVal !== null ? kd.margePctVal+'%' : '—'}</div>
+        <div class="stat-sub">% marge · seuil sain ≥ 20%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Objectif CA (Tarif Cible)</div>
+        <div class="stat-value" style="color:var(--purple)">${kd.caCible > 0 ? Math.round(kd.caCible).toLocaleString('fr-FR')+' €' : '—'}</div>
+        <div class="stat-sub">Coûts couverts + 32% de marge</div>
+      </div>` : '';
+
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:10px;padding-top:4px">
+      Activité · ${curPD.label} · base ${wLabel} j/${wPeriod} (218 j/an)
+    </div>
+    <div class="stats-grid" style="margin-bottom:20px">
+      <div class="stat-card">
+        <div class="stat-label">Consultants en mission</div>
+        <div class="stat-value" style="color:var(--green)">${kd.missions.length}</div>
+        <div class="stat-sub">sur ${cons.length} consultant${cons.length>1?'s':''} dans le périmètre</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Taux d'occupation</div>
+        <div class="stat-value" style="color:${occColor}">${kd.occRate}%</div>
+        <div class="stat-sub">${kd.totalFte}/${kd.maxFte} j/sem. · 100% = tous en mission</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Tarif journalier moyen</div>
+        <div class="stat-value" style="color:var(--accent)">${kd.avgTjm ? kd.avgTjm.toLocaleString('fr-FR')+' €/j' : '—'}</div>
+        <div class="stat-sub">TJM moyen facturé · missions en cours</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Opportunités ouvertes</div>
+        <div class="stat-value" style="color:var(--blue)">${allOpps.length}</div>
+        <div class="stat-sub">En cours de négociation</div>
+      </div>
+    </div>
+    <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:10px">
+      Chiffre d'affaires & Marge · ${curPD.label}
+    </div>
+    <div class="stats-grid" style="margin-bottom:14px">
+      <div class="stat-card" style="border-color:var(--green)">
+        <div class="stat-label">CA Confirmé</div>
+        <div class="stat-value" style="color:var(--green)">${kd.ca ? Math.round(kd.ca).toLocaleString('fr-FR')+' €' : '—'}</div>
+        <div class="stat-sub">Missions signées · ${wLabel} j/${wPeriod}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">CA en négociation</div>
+        <div class="stat-value" style="color:var(--blue)">${kd.caPipeline ? Math.round(kd.caPipeline).toLocaleString('fr-FR')+' €' : '—'}</div>
+        <div class="stat-sub">Pipeline${tauxCouv !== null ? ' · couverture '+tauxCouv+'% du CA confirmé' : ''}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">CA Total prévisionnel</div>
+        <div class="stat-value" style="color:var(--yellow)">${caTotal ? Math.round(caTotal).toLocaleString('fr-FR')+' €' : '—'}</div>
+        <div class="stat-sub">Confirmé + pipeline</div>
+      </div>
+      ${finCards}
+    </div>
+    ${alertHtml}`;
+  return div;
+}
+
+function buildOccTable(pData, cons, isCurPeriod, consOcc, occClass) {
+  const thCells = pData.map(pd =>
+    '<th class="' + (isCurPeriod(pd)?'occ-cur':'') + '" title="' + pd.label + '">' + pd.short + '</th>'
+  ).join('');
+
+  const bodyRows = cons.map(c => {
+    const color = consColor(c.id);
+    const cc    = c.coutComplet || null;
+    const tc    = cc ? Math.round(cc * 1.32) : null;
+    const cells = pData.map(pd => {
+      const fte = consOcc(c.id, pd.start, pd.end);
+      const cls = occClass(fte) + (isCurPeriod(pd) ? ' occ-cur' : '');
+      return '<td class="' + cls + '">' + (fte>0 ? fte+'/5' : '—') + '</td>';
+    }).join('');
+    return '<tr>'
+      + '<td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:8px">'
+      + '<div class="avatar" style="width:22px;height:22px;font-size:9px;background:' + color + '22;color:' + color + ';flex-shrink:0">' + initials(c.name) + '</div>'
+      + '<span>' + c.name + '</span></div></td>'
+      + '<td style="text-align:right;color:var(--orange)">' + (cc ? cc.toLocaleString('fr-FR')+' €' : '—') + '</td>'
+      + '<td style="text-align:right;color:var(--purple);font-weight:600">' + (tc ? tc.toLocaleString('fr-FR')+' €' : '—') + '</td>'
+      + cells + '</tr>';
+  }).join('');
+
+  function mkFootRow(lbl, lblStyle, cellFn) {
+    const tdOpen = lblStyle ? '<td style="' + lblStyle + '">' : '<td>';
+    return '<tr>' + tdOpen + lbl + '</td><td></td><td></td>'
+      + pData.map(pd => '<td class="' + (isCurPeriod(pd)?'occ-cur':'') + '">' + cellFn(pd) + '</td>').join('')
+      + '</tr>';
+  }
+
+  const footRows = [
+    mkFootRow('Missions', '', pd => '<span style="font-weight:700">'+pd.d.missions.length+'</span>'),
+    mkFootRow('Occupation', '', pd => {
+      const col = pd.d.occRate>=80 ? 'var(--green)' : pd.d.occRate>=50 ? 'var(--yellow)' : 'var(--text-muted)';
+      return '<span style="color:'+col+';font-weight:700">'+pd.d.occRate+'%</span>';
+    }),
+    mkFootRow('TJM moyen', '', pd => pd.d.avgTjm ? '<span style="color:var(--accent)">'+pd.d.avgTjm+'€</span>' : '—'),
+    mkFootRow('Masse salariale', 'color:var(--orange)', pd => {
+      return pd.d.masseSalariale>0 ? '<span style="color:var(--orange)">'+Math.round(pd.d.masseSalariale/1000)+'k€</span>' : '—';
+    }),
+    mkFootRow('CA Cible (TC)', 'color:var(--purple)', pd => {
+      return pd.d.caCible>0 ? '<span style="color:var(--purple)">'+Math.round(pd.d.caCible/1000)+'k€</span>' : '—';
+    }),
+  ].join('');
+
+  const div = document.createElement('div');
+  div.className = 'chart-container';
+  div.innerHTML = `
+    <div class="chart-title">Taux d'occupation par période
+      <span style="font-weight:400;color:var(--text-muted)">
+        · <span class="occ-full" style="padding:1px 6px;border-radius:3px">5/5</span> plein temps
+        · <span class="occ-4" style="padding:1px 6px;border-radius:3px">4/5</span>
+        · <span class="occ-3" style="padding:1px 6px;border-radius:3px">3/5</span> partiel
+        · <span class="occ-over" style="padding:1px 6px;border-radius:3px">⚠ sur-alloué</span>
+        &nbsp;·&nbsp;<span style="color:var(--orange)">CC</span> = Coût complet/j
+        &nbsp;·&nbsp;<span style="color:var(--purple)">TC</span> = Tarif cible/j (CC × 1,32)
+      </span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="occ-table">
+        <thead><tr><th>Consultant</th><th style="text-align:right;color:var(--orange)">CC (€/j)</th><th style="text-align:right;color:var(--purple)">TC (€/j)</th>${thCells}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+        <tfoot>${footRows}</tfoot>
+      </table>
+    </div>`;
+  return div;
+}
+
+function buildFinTable(pData, wLabel, wPeriod, isCurPeriod) {
+  function kEur(v) { return v >= 1000 ? Math.round(v/1000)+'k€' : Math.round(v)+'€'; }
+  function pct(v)  { return v+'%'; }
+
+  function finRow(label, color, vals, fmt) {
+    const cells = vals.map((v, i) => {
+      const col = typeof color === 'function' ? color(v) : color;
+      return '<td class="' + (isCurPeriod(pData[i])?'occ-cur':'') + '" style="text-align:right;color:' + col + '">' + (v != null ? fmt(v) : '—') + '</td>';
+    }).join('');
+    return '<tr><td style="font-size:12px;white-space:nowrap;color:var(--text-dim)">' + label + '</td>' + cells + '</tr>';
+  }
+
+  const thCells = pData.map(pd =>
+    '<th class="' + (isCurPeriod(pd)?'occ-cur':'') + '" style="text-align:right" title="' + pd.label + '">' + pd.short + '</th>'
+  ).join('');
+
+  const msRows = pData.some(pd => pd.d.masseSalariale > 0) ? [
+    finRow('Masse salariale (coût employeur)', 'var(--orange)', pData.map(pd=>pd.d.masseSalariale||null), kEur),
+    finRow('Marge brute dégagée',  v => v==null?'var(--text-muted)':v>=0?'var(--green)':'var(--red)', pData.map(pd=>pd.d.margeVal), kEur),
+    finRow('Taux de marge',        v => v==null?'var(--text-muted)':v>=20?'var(--green)':v>=10?'var(--yellow)':'var(--red)', pData.map(pd=>pd.d.margePctVal), pct),
+    finRow('Objectif CA (Tarif Cible)', 'var(--purple)', pData.map(pd=>pd.d.caCible||null), kEur),
+  ] : [];
+
+  const rows = [
+    finRow('CA Confirmé (missions signées)',  'var(--green)',  pData.map(pd=>pd.d.ca||null), kEur),
+    finRow('CA en négociation (pipeline)',    'var(--blue)',   pData.map(pd=>pd.d.caPipeline||null), kEur),
+    finRow('CA Total prévisionnel',           'var(--yellow)', pData.map(pd=>pd.d.caTotal||null), kEur),
+    ...msRows,
+  ].join('');
+
+  const div = document.createElement('div');
+  div.className = 'chart-container';
+  div.innerHTML = `
+    <div class="chart-title">Suivi financier par période
+      <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:11px">· base ${wLabel} j ouvrés/${wPeriod} (218 j/an)</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="occ-table">
+        <thead><tr><th style="min-width:200px">Indicateur</th>${thCells}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  return div;
+}
+
+function buildClientTable(curPD, cons, workDays) {
+  const activeMissions = S.prestations.filter(p => {
+    if (!cons.find(c => c.id === p.consultantId) || p.status !== 'en_cours') return false;
+    const s = new Date(p.startDate + 'T00:00:00');
+    const e = new Date(effectiveEnd(p) + 'T00:00:00');
+    return s <= curPD.end && e >= curPD.start;
+  });
+
+  const byClient = {};
+  activeMissions.forEach(p => {
+    if (!byClient[p.client]) byClient[p.client] = { client: p.client, missions: [], consultants: new Set() };
+    byClient[p.client].missions.push(p);
+    byClient[p.client].consultants.add(p.consultantId);
+  });
+
+  const clientRows = Object.values(byClient)
+    .sort((a, b) => b.missions.reduce((s,p)=>s+(p.fte||5),0) - a.missions.reduce((s,p)=>s+(p.fte||5),0));
+
+  const tableRows = clientRows.map(cl => {
+    const totalFte  = cl.missions.reduce((s,p)=>s+(p.fte||5), 0);
+    const avgTjm    = Math.round(cl.missions.reduce((s,p)=>s+currentTjm(p), 0) / cl.missions.length);
+    const ca        = cl.missions.reduce((s,p)=>s+currentTjm(p)*workDays*(p.fte||5)/5, 0);
+    const natures   = [...new Set(cl.missions.map(p=>natureBadge(p.nature)))].join(' ');
+    const consNames = [...cl.consultants].map(id => {
+      const c = S.consultants.find(x=>x.id===id);
+      return c ? '<span style="background:'+consColor(id)+'22;color:'+consColor(id)+';padding:1px 6px;border-radius:10px;font-size:10px">'+initials(c.name)+'</span>' : '';
+    }).join(' ');
+    return '<tr>'
+      + '<td><strong>' + cl.client + '</strong></td>'
+      + '<td>' + consNames + '</td>'
+      + '<td style="text-align:center">' + cl.missions.length + '</td>'
+      + '<td style="text-align:center;font-weight:600">' + totalFte + '/5</td>'
+      + '<td>' + natures + '</td>'
+      + '<td style="color:var(--accent);font-weight:700">' + avgTjm.toLocaleString('fr-FR') + ' €/j</td>'
+      + '<td style="color:var(--yellow);font-weight:700">' + Math.round(ca).toLocaleString('fr-FR') + ' €</td>'
+      + '</tr>';
+  }).join('');
+
+  const div = document.createElement('div');
+  div.className = 'chart-container';
+  div.innerHTML = '<div class="chart-title">Répartition par client · ' + curPD.label + '</div>'
+    + (clientRows.length
+      ? '<div style="overflow-x:auto"><table class="client-table"><thead><tr>'
+        + '<th>Client</th><th>Consultants</th><th style="text-align:center">Missions</th>'
+        + '<th style="text-align:center">FTE</th><th>Nature</th>'
+        + '<th style="text-align:right">TJM moy.</th><th style="text-align:right">CA estimé</th>'
+        + '</tr></thead><tbody>' + tableRows + '</tbody></table></div>'
+      : '<div style="color:var(--text-muted);font-size:13px;padding:4px 0">Aucune mission active sur cette période</div>');
+  return div;
+}
+
+function buildEventsDiv(cons, today) {
+  const horizon = new Date(today.getTime() + 90 * 86400000);
+
+  const endings = S.prestations
+    .filter(p => cons.find(c=>c.id===p.consultantId) && p.status==='en_cours')
+    .map(p => ({ p, endD: new Date(effectiveEnd(p)+'T00:00:00') }))
+    .filter(({endD}) => endD >= today && endD <= horizon)
+    .sort((a,b) => a.endD - b.endD);
+
+  const upcoming = S.prestations
+    .filter(p => cons.find(c=>c.id===p.consultantId) && p.status==='opportunite')
+    .filter(p => new Date(p.startDate+'T00:00:00') <= horizon)
+    .sort((a,b) => a.startDate.localeCompare(b.startDate));
+
+  let evHtml = '';
+
+  endings.forEach(({p, endD}) => {
+    const c    = cons.find(x=>x.id===p.consultantId);
+    const days = Math.round((endD - today) / 86400000);
+    const col  = days <= 30 ? 'var(--red)' : 'var(--orange)';
+    const tag  = p.extension?.active ? ' (prolongé)' : p.earlyExit?.active ? ' (anticipée)' : '';
+    evHtml += '<div class="event-row">'
+      + '<div class="event-dot" style="background:' + col + '"></div>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:13px;font-weight:500">' + (c?.name||'') + ' — ' + p.client + (p.clientService ? ' / '+p.clientService : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted)">Fin' + tag + ' : ' + fmtD(effectiveEnd(p)) + ' · ' + (p.fte||5) + '/5 · ' + currentTjm(p).toLocaleString('fr-FR') + ' €/j</div>'
+      + '</div>'
+      + '<span class="event-days" style="color:' + col + '">' + days + 'j</span>'
+      + '<span class="status-pill pill-en_cours" style="font-size:10px">Fin proche</span>'
+      + '</div>';
+  });
+
+  upcoming.forEach(p => {
+    const c = cons.find(x=>x.id===p.consultantId);
+    evHtml += '<div class="event-row">'
+      + '<div class="event-dot" style="background:var(--blue)"></div>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:13px;font-weight:500">' + (c?.name||'') + ' — ' + p.client + (p.clientService ? ' / '+p.clientService : '') + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted)">Démarrage : ' + fmtD(p.startDate) + ' · ' + (p.fte||5) + '/5 · ' + currentTjm(p).toLocaleString('fr-FR') + ' €/j</div>'
+      + '</div>'
+      + '<span class="status-pill pill-opportunite" style="font-size:10px">Opportunité</span>'
+      + '</div>';
+  });
+
+  const div = document.createElement('div');
+  div.className = 'chart-container';
+  div.style.marginBottom = '20px';
+  div.innerHTML = '<div class="chart-title">Prochaines échéances — 90 jours</div>'
+    + (evHtml || '<div style="color:var(--text-muted);font-size:13px;padding:4px 0">Aucune échéance dans les 90 prochains jours</div>');
+  return div;
+}
+
+// ─── STATS VIEW — orchestrateur ────────────────────────────────────────────────
+function renderStats() {
+  const root = document.getElementById('stats-view');
+  root.innerHTML = '';
+
+  const today = new Date();
+  const curY  = today.getFullYear();
+  const curQ  = Math.floor(today.getMonth() / 3);
+  const cons  = filterCons ? S.consultants.filter(c=>c.id===filterCons) : S.consultants;
+
+  // ── Toolbar ────────────────────────────────────────────────────────────────
+  const toolbar = document.createElement('div');
+  toolbar.className = 'stats-toolbar';
+  toolbar.innerHTML = `
+    <span style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.07em;text-transform:uppercase">Échelle :</span>
+    <button class="period-tab ${statsPeriod==='quarterly'?'active':''}" onclick="statsPeriod='quarterly';renderStats()">Par trimestre (an en cours)</button>
+    <button class="period-tab ${statsPeriod==='5y'?'active':''}"        onclick="statsPeriod='5y';renderStats()">5 ans</button>
+    <button class="period-tab ${statsPeriod==='10y'?'active':''}"       onclick="statsPeriod='10y';renderStats()">10 ans</button>`;
+  root.appendChild(toolbar);
+
+  const scroll = document.createElement('div');
+  scroll.className = 'stats-scroll';
+  root.appendChild(scroll);
+
+  // ── Calcul des périodes ────────────────────────────────────────────────────
+  function getPeriods() {
+    if (statsPeriod === 'quarterly') {
+      const labels    = ['Q1','Q2','Q3','Q4'];
+      const mStarts   = [0,3,6,9], mEnds = [2,5,8,11], mLastDays = [31,30,30,31];
+      return labels.map((lbl, i) => ({
+        label: lbl + ' ' + curY, short: lbl, qi: i,
+        start: new Date(curY, mStarts[i], 1),
+        end:   new Date(curY, mEnds[i], mLastDays[i], 23, 59, 59),
+      }));
+    }
+    const n = statsPeriod === '5y' ? 5 : 10;
+    const startY = curY - Math.floor(n * 0.4);
+    return Array.from({length: n}, (_, i) => {
+      const y = startY + i;
+      return { label: String(y), short: String(y), qi: null, start: new Date(y,0,1), end: new Date(y,11,31,23,59,59) };
+    });
+  }
+
+  function isCurPeriod(p) {
+    return statsPeriod === 'quarterly' ? p.qi === curQ : p.label === String(curY);
+  }
+
+  // ── Calcul des données ─────────────────────────────────────────────────────
+  function overlaps(prest, pStart, pEnd) {
+    const s = new Date(prest.startDate + 'T00:00:00');
+    const e = new Date(effectiveEnd(prest) + 'T00:00:00');
+    return s <= pEnd && e >= pStart;
+  }
+
+  function activeIn(pStart, pEnd, statusFilter) {
+    return S.prestations.filter(p =>
+      cons.find(c=>c.id===p.consultantId) &&
+      (statusFilter ? p.status === statusFilter : p.status !== 'terminee') &&
+      overlaps(p, pStart, pEnd)
+    );
+  }
+
+  function periodData(pStart, pEnd) {
+    const wDays      = statsPeriod === 'quarterly' ? 55 : 218;
+    const missions   = activeIn(pStart, pEnd, 'en_cours');
+    const opps       = activeIn(pStart, pEnd, 'opportunite');
+    const totalFte   = missions.reduce((s,p) => s+(p.fte||5), 0);
+    const maxFte     = cons.length * 5;
+    const occRate    = maxFte > 0 ? Math.round(totalFte/maxFte*100) : 0;
+    const avgTjm     = missions.length ? Math.round(missions.reduce((s,p)=>s+currentTjm(p),0)/missions.length) : null;
+    const ca         = missions.reduce((s,p) => s+currentTjm(p)*wDays*(p.fte||5)/5, 0);
+    const caPipeline = opps.reduce((s,p) => s+currentTjm(p)*wDays*(p.fte||5)/5, 0);
+    const masseSalariale = cons.filter(c=>c.coutComplet>0).reduce((s,c)=>s+(c.coutComplet||0)*wDays, 0);
+    const caCible    = missions.reduce((s,p) => {
+      const c = cons.find(x=>x.id===p.consultantId);
+      return c?.coutComplet ? s + c.coutComplet*1.32*wDays*(p.fte||5)/5 : s;
+    }, 0);
+    const margeVal    = masseSalariale > 0 ? ca - masseSalariale : null;
+    const margePctVal = (margeVal !== null && ca > 0) ? Math.round(margeVal/ca*100) : null;
+    return { missions, opps, totalFte, maxFte, occRate, avgTjm, ca, caPipeline, caTotal: ca+caPipeline, masseSalariale, caCible, margeVal, margePctVal };
+  }
+
+  function consOcc(consultantId, pStart, pEnd) {
+    return S.prestations
+      .filter(p => p.consultantId===consultantId && p.status==='en_cours' && overlaps(p,pStart,pEnd))
+      .reduce((sum,p) => sum+(p.fte||5), 0);
+  }
+
+  function occClass(fte) {
+    if (fte===0) return 'occ-empty';
+    if (fte>=6)  return 'occ-over';
+    if (fte===5) return 'occ-full';
+    if (fte===4) return 'occ-4';
+    return 'occ-3';
+  }
+
+  // ── Données pré-calculées ──────────────────────────────────────────────────
+  const pData   = getPeriods().map(p => ({ ...p, d: periodData(p.start, p.end) }));
+  const curPD   = pData.find(isCurPeriod) || pData[pData.length - 1];
+  const kd      = curPD.d;
+  const wDays   = statsPeriod === 'quarterly' ? 55 : 218;
+  const wLabel  = String(wDays);
+  const wPeriod = statsPeriod === 'quarterly' ? 'trimestre' : 'an';
+  const allOpps = S.prestations.filter(p => cons.find(c=>c.id===p.consultantId) && p.status==='opportunite');
+
+  // ── Rendu ──────────────────────────────────────────────────────────────────
+  scroll.appendChild(buildKpiStrip(kd, curPD, wLabel, wPeriod, cons, allOpps));
+  scroll.appendChild(buildOccTable(pData, cons, isCurPeriod, consOcc, occClass));
+  scroll.appendChild(buildFinTable(pData, wLabel, wPeriod, isCurPeriod));
+
+  const caDiv = document.createElement('div');
+  caDiv.className = 'chart-container';
+  caDiv.innerHTML = '<div class="chart-title">Évolution du Chiffre d\'Affaires'
+    + '<span style="font-weight:400;margin-left:12px">'
+    + '<span style="color:#22c55e">▮ CA Confirmé (€)</span>&nbsp;&nbsp;'
+    + '<span style="color:#38bdf8">▮ CA Pipeline (€)</span>'
+    + (pData.some(pd=>pd.d.masseSalariale>0) ? '&nbsp;&nbsp;<span style="color:#f97316">── Masse salariale</span>' : '')
+    + '</span></div>';
+  const caEl = document.createElement('div');
+  buildCaChart(caEl, pData);
+  caDiv.appendChild(caEl);
+  scroll.appendChild(caDiv);
+
+  const comboDiv = document.createElement('div');
+  comboDiv.className = 'chart-container';
+  comboDiv.innerHTML = '<div class="chart-title">Évolution du Tarif Journalier Moyen & Taux d\'occupation'
+    + '<span style="font-weight:400;margin-left:12px">'
+    + '<span style="color:#4f6ef7">── TJM (€/j, axe gauche)</span>&nbsp;&nbsp;'
+    + '<span style="color:#22c55e">▮ Occupation (%, axe droit)</span>'
+    + '</span></div>';
+  const comboEl = document.createElement('div');
+  buildDualChart(comboEl, pData, pData.map(pd=>pd.d.avgTjm), pData.map(pd=>pd.d.occRate||null));
+  comboDiv.appendChild(comboEl);
+  scroll.appendChild(comboDiv);
+
+  scroll.appendChild(buildClientTable(curPD, cons, wDays));
+  scroll.appendChild(buildEventsDiv(cons, today));
+}
+
+// ── Chart helpers ──────────────────────────────────────────────────────────────
+
+function buildCaChart(container, pData) {
+  const W = 760, H = 200;
+  const PAD = { top: 20, right: 14, bottom: 30, left: 64 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top  - PAD.bottom;
+  const n  = pData.length;
+
+  const caVals  = pData.map(pd => pd.d.ca || 0);
+  const pipVals = pData.map(pd => pd.d.caPipeline || 0);
+  const msVals  = pData.map(pd => pd.d.masseSalariale || null);
+  const totVals = pData.map((pd, i) => caVals[i] + pipVals[i]);
+
+  const allVals = [...caVals, ...pipVals, ...totVals, ...msVals.filter(v=>v!==null)];
+  if (!allVals.some(v => v > 0)) {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    return;
+  }
+
+  const yMax = Math.max(...allVals) * 1.12 || 1;
+  const barW = Math.max(6, cW / Math.max(n, 1) * 0.35);
+  const gap  = cW / Math.max(n - 1, 1);
+
+  function xPx(i) { return PAD.left + (n > 1 ? i / (n - 1) : 0.5) * cW; }
+  function yPx(v) { return PAD.top + cH * (1 - v / yMax); }
+  function fmtY(v) { return v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? Math.round(v/1000)+'k' : Math.round(v); }
+
+  let grid = '', yLabels = '', xLabels = '', bars = '', msLine = '', msDots = '';
+  const nT = 4;
+  for (let t = 0; t <= nT; t++) {
+    const v = yMax * t / nT;
+    const y = yPx(v).toFixed(1);
+    grid    += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>`;
+    yLabels += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#64748b">${fmtY(v)}</text>`;
+  }
+
+  pData.forEach((pd, i) => {
+    const x   = xPx(i);
+    const ca  = caVals[i];
+    const pip = pipVals[i];
+    const ms  = msVals[i];
+
+    // Stacked bars: CA confirmé (bottom) + Pipeline (on top)
+    if (ca > 0) {
+      const yCA = yPx(ca), hCA = H - PAD.bottom - yCA;
+      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yCA.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hCA).toFixed(1)}" fill="#22c55e" fill-opacity="0.7" rx="2">
+        <title>${pd.label} · CA Confirmé : ${Math.round(ca).toLocaleString('fr-FR')} €</title></rect>`;
+    }
+    if (pip > 0) {
+      const yPip = yPx(ca + pip), hPip = yPx(ca) - yPip;
+      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yPip.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hPip).toFixed(1)}" fill="#38bdf8" fill-opacity="0.55" rx="2">
+        <title>${pd.label} · CA Pipeline : ${Math.round(pip).toLocaleString('fr-FR')} €</title></rect>`;
+    }
+
+    // Masse salariale line
+    if (ms !== null) {
+      const yMs = yPx(ms).toFixed(1), xMs = x.toFixed(1);
+      if (i === 0 || msVals[i-1] === null) msLine += `M ${xMs} ${yMs}`;
+      else msLine += ` L ${xMs} ${yMs}`;
+      msDots += `<circle cx="${xMs}" cy="${yMs}" r="3" fill="#f97316" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label} · Masse sal. : ${Math.round(ms).toLocaleString('fr-FR')} €</title></circle>`;
+    }
+
+    const label = n <= 12 ? pd.short : (i % Math.ceil(n/8) === 0 ? pd.short : '');
+    if (label) xLabels += `<text x="${x.toFixed(1)}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+  });
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
+      ${grid}
+      ${bars}
+      ${msLine ? `<path d="${msLine}" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="5,3" stroke-linejoin="round"/>` : ''}
+      ${msDots}
+      ${yLabels}${xLabels}
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
+    </svg>`;
+}
+
+function buildDualChart(container, periods, tjmValues, occValues) {
+  const W = 760, H = 180;
+  const PAD = { top: 14, right: 50, bottom: 30, left: 52 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top  - PAD.bottom;
+
+  const tjmFiltered = tjmValues.filter(v => v !== null);
+  if (!tjmFiltered.length && !occValues.filter(v=>v!==null).length) {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    return;
+  }
+
+  const tjmMin = tjmFiltered.length ? Math.min(...tjmFiltered) * 0.92 : 0;
+  const tjmMax = tjmFiltered.length ? Math.max(...tjmFiltered) * 1.08 : 1000;
+
+  function xPx(i) { return PAD.left + (periods.length > 1 ? i / (periods.length - 1) : 0.5) * cW; }
+  function tjmY(v) { return PAD.top + cH * (1 - (v - tjmMin) / Math.max(1, tjmMax - tjmMin)); }
+  function occY(v) { return PAD.top + cH * (1 - v / 100); }
+
+  // Grid (based on 0–100% right axis, 5 lines)
+  let grid = '', yLeft = '', yRight = '', xLabels = '';
+  const nT = 4;
+  for (let t = 0; t <= nT; t++) {
+    const frac = t / nT;
+    const y    = (PAD.top + cH * (1 - frac)).toFixed(1);
+    const occV = Math.round(frac * 100);
+    const tjmV = Math.round(tjmMin + (tjmMax - tjmMin) * frac);
+    grid   += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>`;
+    yLeft  += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#4f6ef7">${tjmV}</text>`;
+    yRight += `<text x="${W-PAD.right+5}" y="${y}" dominant-baseline="middle" font-size="9" fill="#22c55e">${occV}%</text>`;
+  }
+
+  // Bars for occupation
+  const barW = Math.max(3, cW / Math.max(periods.length, 1) * 0.55);
+  let bars = '';
+  periods.forEach((pd, i) => {
+    const v = occValues[i];
+    if (v === null) return;
+    const x = xPx(i), y = occY(v), bH = H - PAD.bottom - y;
+    const col = v >= 80 ? '#22c55e' : v >= 50 ? '#eab308' : '#64748b';
+    bars += `<rect x="${(x - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0, bH).toFixed(1)}" fill="${col}" fill-opacity="0.22" rx="2"><title>${pd.label}: ${v}%</title></rect>`;
+    // value label on top of bar if room
+    if (bH > 14) bars += `<text x="${x.toFixed(1)}" y="${(y-3).toFixed(1)}" text-anchor="middle" font-size="8" fill="${col}" fill-opacity="0.85">${v}%</text>`;
+  });
+
+  // Line + dots for TJM
+  let pathSegs = [], dots = '';
+  let prevNull = true;
+  periods.forEach((pd, i) => {
+    const v = tjmValues[i];
+    const x = xPx(i).toFixed(1);
+    const label = periods.length <= 12 ? pd.short : (i % Math.ceil(periods.length/8) === 0 ? pd.short : '');
+    if (label) xLabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+    if (v === null) { prevNull = true; return; }
+    const y = tjmY(v).toFixed(1);
+    pathSegs.push(prevNull ? `M ${x} ${y}` : `L ${x} ${y}`);
+    prevNull = false;
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="#4f6ef7" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label}: ${v} €/j</title></circle>`;
+    // value label
+    dots += `<text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="#4f6ef7" fill-opacity="0.85">${v}€</text>`;
+  });
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
+      ${grid}
+      ${bars}
+      <path d="${pathSegs.join(' ')}" fill="none" stroke="#4f6ef7" stroke-width="2.5" stroke-linejoin="round"/>
+      ${dots}
+      ${yLeft}${yRight}${xLabels}
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
+      <line x1="${W-PAD.right}" x2="${W-PAD.right}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#22c55e" stroke-width="0.8" stroke-dasharray="3,3"/>
+    </svg>`;
+}
+
+function buildLineChart(container, periods, rawValues, opts = {}) {
+  const W = 760, H = 150;
+  const PAD = { top: 14, right: 14, bottom: 30, left: 48 };
+  const cW  = W - PAD.left - PAD.right;
+  const cH  = H - PAD.top  - PAD.bottom;
+
+  const values = rawValues.filter(v => v !== null);
+  if (!values.length) {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    return;
+  }
+
+  const rawMin = opts.yMin ?? Math.min(...values);
+  const rawMax = opts.yMax ?? Math.max(...values);
+  const pad = (rawMax - rawMin) * 0.15 || rawMin * 0.1 || 10;
+  const yMin = Math.max(opts.yMin ?? -Infinity, rawMin - pad);
+  const yMax = opts.yMax ?? rawMax + pad;
+
+  function xPx(i) { return PAD.left + (periods.length > 1 ? i / (periods.length - 1) : 0.5) * cW; }
+  function yPx(v) { return PAD.top + cH * (1 - (v - yMin) / (yMax - yMin)); }
+
+  // Grid & Y ticks
+  let grid = '', xlabels = '', dots = '';
+  const nT = 4;
+  for (let t = 0; t <= nT; t++) {
+    const v = yMin + (yMax - yMin) * t / nT;
+    const y = yPx(v).toFixed(1);
+    grid += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>
+      <text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#64748b">${Math.round(v)}</text>`;
+  }
+
+  // Path
+  let pathSegs = [], areaSegs = [], prevI = null;
+  periods.forEach((pd, i) => {
+    const v = rawValues[i];
+    // X label
+    const x = xPx(i).toFixed(1);
+    const label = periods.length <= 12 ? pd.short : (i % Math.ceil(periods.length / 8) === 0 ? pd.short : '');
+    if (label) xlabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+    if (v === null) { prevI = null; return; }
+    const y = yPx(v).toFixed(1);
+    if (prevI === null) {
+      pathSegs.push(`M ${x} ${y}`);
+      areaSegs.push(`M ${x} ${H-PAD.bottom} L ${x} ${y}`);
+    } else {
+      pathSegs.push(`L ${x} ${y}`);
+      areaSegs.push(`L ${x} ${y}`);
+    }
+    if (i === rawValues.length - 1 || rawValues[i+1] === null) {
+      areaSegs.push(`L ${x} ${H-PAD.bottom} Z`);
+    }
+    const col = opts.color || '#4f6ef7';
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="${col}" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label}: ${Math.round(v)}${opts.unit?' '+opts.unit:''}</title></circle>`;
+    prevI = i;
+  });
+
+  const col = opts.color || '#4f6ef7';
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
+      ${grid}
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
+      <path d="${areaSegs.join(' ')}" fill="${col}" fill-opacity="0.08"/>
+      <path d="${pathSegs.join(' ')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+      ${dots}
+      ${xlabels}
+    </svg>`;
+}
+
+// ─── FILTER ───────────────────────────────────────────────────────────────────
+function matchFilter(p) { return filterStatus === 'all' || p.status === filterStatus; }
+
+function setFilter(s) {
+  filterStatus = s;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.s === s));
+  render();
+}
+
+// ─── VIEW SWITCH ──────────────────────────────────────────────────────────────
+function switchView(v) {
+  currentView = v;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === v));
+  document.getElementById('gantt-container').style.display = v==='gantt' ? 'flex' : 'none';
+  document.getElementById('list-view').style.display       = v==='list'  ? 'block' : 'none';
+  document.getElementById('stats-view').style.display      = v==='stats' ? 'flex' : 'none';
+  render();
+}
+
+// ─── PRESTATION MODAL ────────────────────────────────────────────────────────
+function openPrestModal(p, forceConsId) {
+  // If p is a serialized string from onclick attr, it's already parsed
+  const overlay = document.getElementById('prest-overlay');
+  overlay.classList.add('open');
+
+  // Populate consultant select
+  const sel = document.getElementById('f-cons');
+  sel.innerHTML = '';
+  S.consultants.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.name;
+    sel.appendChild(o);
+  });
+
+  extActive  = false;
+  exitActive = false;
+
+  if (p) {
+    document.getElementById('prest-modal-title').textContent = 'Modifier la prestation';
+    document.getElementById('btn-del-prest').style.display = 'block';
+    document.getElementById('f-id').value       = p.id;
+    document.getElementById('f-cons').value     = p.consultantId;
+    document.getElementById('f-status').value   = p.status;
+    document.getElementById('f-nature').value   = p.nature || 'mission';
+    document.getElementById('f-client').value   = p.client || '';
+    document.getElementById('f-service').value  = p.clientService || '';
+    document.getElementById('f-start').value    = p.startDate || '';
+    document.getElementById('f-end').value      = p.endDate || '';
+    document.getElementById('f-tjm').value      = p.tjm || '';
+    document.getElementById('f-fte').value      = p.fte || 5;
+    document.getElementById('f-notes').value    = p.notes || '';
+
+    // Extension
+    extActive = !!(p.extension?.active && p.extension.date);
+    document.getElementById('f-ext-date').value = p.extension?.date || '';
+
+    // Early exit
+    exitActive = !!(p.earlyExit?.active && p.earlyExit.date);
+    document.getElementById('f-exit-date').value = p.earlyExit?.date || '';
+
+    // Revisions
+    modalRevisions = p.tjmRevisions ? [...p.tjmRevisions] : [];
+  } else {
+    document.getElementById('prest-modal-title').textContent = 'Nouvelle prestation';
+    document.getElementById('btn-del-prest').style.display = 'none';
+    document.getElementById('f-id').value       = '';
+    document.getElementById('f-status').value   = 'en_cours';
+    document.getElementById('f-nature').value   = 'mission';
+    document.getElementById('f-client').value   = '';
+    document.getElementById('f-service').value  = '';
+    document.getElementById('f-start').value    = '';
+    document.getElementById('f-end').value      = '';
+    document.getElementById('f-ext-date').value = '';
+    document.getElementById('f-exit-date').value= '';
+    document.getElementById('f-tjm').value      = '';
+    document.getElementById('f-fte').value      = '5';
+    document.getElementById('f-notes').value    = '';
+    modalRevisions = [];
+    if (forceConsId) sel.value = forceConsId;
+    else if (filterCons) sel.value = filterCons;
+  }
+
+  applyToggleUI();
+  renderRevisions();
+  updateBadges();
+}
+
+function toggleOption(which) {
+  if (which === 'ext') {
+    extActive = !extActive;
+    if (extActive) exitActive = false; // mutually exclusive
+  } else {
+    exitActive = !exitActive;
+    if (exitActive) extActive = false;
+  }
+  applyToggleUI();
+  updateBadges();
+}
+
+function applyToggleUI() {
+  const applyToggle = (active, headerId, checkId, bodyId) => {
+    document.getElementById(headerId).classList.toggle('active', active);
+    const ch = document.getElementById(checkId);
+    ch.classList.toggle('checked', active);
+    ch.innerHTML = active ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : '';
+    document.getElementById(bodyId).classList.toggle('open', active);
+  };
+  applyToggle(extActive,  'ext-toggle-header',  'ext-check',  'ext-body');
+  applyToggle(exitActive, 'exit-toggle-header', 'exit-check', 'exit-body');
+}
+
+function updateTcDisplay() {
+  const cc = parseFloat(document.getElementById('cf-cout-complet').value) || 0;
+  const disp = document.getElementById('cf-tc-display');
+  if (cc > 0) {
+    const tc = Math.round(cc * 1.32);
+    disp.innerHTML = `TC : <strong style="color:var(--purple)">${tc.toLocaleString('fr-FR')} €/j</strong><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Marge 32% incluse</div>`;
+  } else {
+    disp.textContent = '';
+  }
+}
+
+function updateBadges() {
+  const extDate  = document.getElementById('f-ext-date').value;
+  const exitDate = document.getElementById('f-exit-date').value;
+  document.getElementById('ext-badge').textContent  = extActive  && extDate  ? `→ ${fmtD(extDate)}`  : (extActive ? 'date à saisir' : 'désactivée');
+  document.getElementById('exit-badge').textContent = exitActive && exitDate ? `→ ${fmtD(exitDate)}` : (exitActive ? 'date à saisir' : 'désactivée');
+
+  // Show current TJM if revisions exist
+  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || null;
+  const disp = document.getElementById('current-tjm-display');
+  if (modalRevisions.length && baseTjm) {
+    const last = modalRevisions[modalRevisions.length - 1];
+    const diff = last.tjm - baseTjm;
+    disp.innerHTML = `TJM actuel : <strong style="color:var(--accent)">${last.tjm.toLocaleString('fr-FR')} €/j</strong> <span style="color:${diff>=0?'var(--green)':'var(--red)'};">(${diff>=0?'+':''}${diff} €)</span>`;
+  } else {
+    disp.textContent = '';
+  }
+}
+
+function addRevision() {
+  const date = document.getElementById('rev-date').value;
+  const tjm  = parseFloat(document.getElementById('rev-tjm').value);
+  if (!date) { showToast('Saisissez une date de mise en place', 'error'); return; }
+  if (!tjm)  { showToast('Saisissez un TJM', 'error'); return; }
+  // Remove if same date exists
+  modalRevisions = modalRevisions.filter(r => r.date !== date);
+  modalRevisions.push({ date, tjm });
+  modalRevisions.sort((a,b) => a.date.localeCompare(b.date));
+  document.getElementById('rev-date').value = '';
+  document.getElementById('rev-tjm').value  = '';
+  renderRevisions();
+  updateBadges();
+}
+
+function removeRevision(date) {
+  modalRevisions = modalRevisions.filter(r => r.date !== date);
+  renderRevisions();
+  updateBadges();
+}
+
+function renderRevisions() {
+  const el = document.getElementById('revision-list');
+  el.innerHTML = '';
+  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || 0;
+  if (!modalRevisions.length) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px 0 10px">Aucune révision — le TJM de départ s'applique.</div>`;
+    return;
+  }
+  modalRevisions.forEach((r, i) => {
+    const prev = i === 0 ? baseTjm : modalRevisions[i-1].tjm;
+    const diff = r.tjm - prev;
+    el.innerHTML += `
+      <div class="revision-item">
+        <span class="revision-date">${fmtD(r.date)}</span>
+        <span class="revision-tjm">${r.tjm.toLocaleString('fr-FR')} €/j</span>
+        ${prev ? `<span class="revision-delta ${diff>=0?'delta-up':'delta-down'}">${diff>=0?'+':''}${diff} €</span>` : ''}
+        <button class="btn-icon" onclick="removeRevision('${r.date}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button>
+      </div>`;
+  });
+}
+
+function savePrestation() {
+  const id          = document.getElementById('f-id').value;
+  const consultantId= document.getElementById('f-cons').value;
+  const status      = document.getElementById('f-status').value;
+  const client      = document.getElementById('f-client').value.trim();
+  const clientService= document.getElementById('f-service').value.trim();
+  const startDate   = document.getElementById('f-start').value;
+  const endDate     = document.getElementById('f-end').value;
+  const extDate     = document.getElementById('f-ext-date').value;
+  const exitDate    = document.getElementById('f-exit-date').value;
+  const tjm         = parseFloat(document.getElementById('f-tjm').value) || 0;
+  const fte         = parseInt(document.getElementById('f-fte').value) || 5;
+  const nature      = document.getElementById('f-nature').value || 'mission';
+  const notes       = document.getElementById('f-notes').value.trim();
+
+  if (!client)    { showToast('Le nom du client est requis', 'error'); return; }
+  if (!startDate || !endDate) { showToast('Les dates sont requises', 'error'); return; }
+  if (!tjm)       { showToast('Le TJM est requis', 'error'); return; }
+  if (!consultantId){ showToast('Sélectionnez un consultant', 'error'); return; }
+  if (extActive && exitActive) { showToast('Prolongation et sortie anticipée sont mutuellement exclusives', 'error'); return; }
+
+  const prest = {
+    id: id || genId(),
+    consultantId, status, client, clientService, startDate, endDate,
+    extension:  { active: extActive,  date: extDate  || '' },
+    earlyExit:  { active: exitActive, date: exitDate || '' },
+    tjm, fte, nature, tjmRevisions: modalRevisions,
+    notes,
+  };
+
+  if (id) {
+    const i = S.prestations.findIndex(p => p.id === id);
+    if (i >= 0) S.prestations[i] = prest;
+  } else {
+    S.prestations.push(prest);
+  }
+
+  save();
+  closeModal('prest-overlay');
+  render();
+  showToast('Prestation enregistrée', 'success');
+}
+
+function deletePrestation() {
+  const id = document.getElementById('f-id').value;
+  if (!id || !confirm('Supprimer cette prestation ?')) return;
+  S.prestations = S.prestations.filter(p => p.id !== id);
+  save();
+  closeModal('prest-overlay');
+  render();
+  showToast('Prestation supprimée');
+}
+
+// ─── CONSULTANT MODAL ────────────────────────────────────────────────────────
+function openConsModal(id) {
+  document.getElementById('cons-overlay').classList.add('open');
+  if (id) {
+    const c = S.consultants.find(x=>x.id===id);
+    document.getElementById('cons-modal-title').textContent = 'Modifier le consultant';
+    document.getElementById('btn-del-cons').style.display = 'block';
+    document.getElementById('cf-id').value    = c.id;
+    document.getElementById('cf-name').value  = c.name;
+    document.getElementById('cf-role').value  = c.role||'';
+    document.getElementById('cf-email').value = c.email||'';
+    document.getElementById('cf-cout-complet').value = c.coutComplet || '';
+    updateTcDisplay();
+  } else {
+    document.getElementById('cons-modal-title').textContent = 'Nouveau consultant';
+    document.getElementById('btn-del-cons').style.display = 'none';
+    document.getElementById('cf-id').value = document.getElementById('cf-name').value =
+      document.getElementById('cf-role').value = document.getElementById('cf-email').value = '';
+    document.getElementById('cf-cout-complet').value = '';
+    updateTcDisplay();
+  }
+}
+
+function saveConsultant() {
+  const id          = document.getElementById('cf-id').value;
+  const name        = document.getElementById('cf-name').value.trim();
+  const role        = document.getElementById('cf-role').value.trim();
+  const email       = document.getElementById('cf-email').value.trim();
+  const coutComplet = parseFloat(document.getElementById('cf-cout-complet').value) || 0;
+  if (!name) { showToast('Le nom est requis', 'error'); return; }
+  if (id) {
+    const i = S.consultants.findIndex(c=>c.id===id);
+    if (i>=0) S.consultants[i] = {...S.consultants[i], name, role, email, coutComplet: coutComplet || undefined};
+  } else {
+    S.consultants.push({ id: genId(), name, role, email, ...(coutComplet ? {coutComplet} : {}) });
+  }
+  save(); closeModal('cons-overlay'); render();
+  showToast('Consultant enregistré', 'success');
+}
+
+function deleteConsultant() {
+  const id = document.getElementById('cf-id').value;
+  if (!id) return;
+  const nb = S.prestations.filter(p=>p.consultantId===id).length;
+  const msg = nb > 0
+    ? `Ce consultant a ${nb} prestation(s) associée(s). Supprimer quand même ?`
+    : 'Supprimer ce consultant ?';
+  if (!confirm(msg)) return;
+  S.consultants = S.consultants.filter(c=>c.id!==id);
+  if (filterCons === id) filterCons = null;
+  save(); closeModal('cons-overlay'); render();
+  showToast('Consultant supprimé');
+}
+
+// ─── MODAL UTILS ─────────────────────────────────────────────────────────────
+function closeModal(overlayId) { document.getElementById(overlayId).classList.remove('open'); }
+function overlayClick(e, id) { if (e.target.id === id) closeModal(id); }
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(()=>{ t.className=''; }, 2500);
+}
+
+// ─── INIT VIEW ────────────────────────────────────────────────────────────────
+document.getElementById('gantt-container').style.display = 'flex';
+document.getElementById('gantt-container').style.flexDirection = 'column';
+document.getElementById('list-view').style.display  = 'none';
+document.getElementById('stats-view').style.display = 'none'; // flex when active
+</script>
+</body>
+</html>
