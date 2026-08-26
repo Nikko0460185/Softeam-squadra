@@ -1,0 +1,94 @@
+#gantt-container { flex: 1; overflow: auto; }
+#gantt-timenav {
+  display: flex; align-items: center; gap: 8px; padding: 6px 20px;
+  background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+#gantt-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#gantt-wrapper { min-width: 100%; position: relative; }
+
+#gantt-header {
+  display: flex; position: sticky; top: 0; z-index: 10;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+/* Colonne figée horizontalement (position:sticky left:0), en plus d'être déjà figée
+   verticalement via #gantt-header : reste visible pendant le défilement dans le temps, pour
+   toujours pouvoir relier une barre à son consultant/client sans perdre le repère. */
+.gantt-label-col {
+  min-width: 240px; width: 240px; padding: 10px 16px;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  border-right: 1px solid var(--border); flex-shrink: 0;
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+}
+.gantt-months { display: flex; flex: 1; }
+.gantt-month {
+  flex: 1; min-width: 80px; text-align: center; font-size: 11px;
+  color: var(--text-muted); padding: 8px 4px; border-right: 1px solid var(--border);
+}
+.gantt-month.current-month { background: rgba(79,110,247,.05); }
+.gantt-month-label { font-weight: 600; display: block; }
+.gantt-month-year { font-size: 10px; opacity: .7; }
+
+.gantt-row {
+  display: flex; border-bottom: 1px solid var(--border);
+  min-height: 54px; align-items: stretch;
+}
+.gantt-row:hover { background: rgba(255,255,255,.015); }
+
+/* Contenu volontairement minimal (nom seul) : le rôle/statut/avatar sont déjà dans la barre
+   latérale des consultants — les répéter ici créait une redondance visuelle inutile, en plus
+   de manger de la place sur une colonne qui doit rester figée pendant le défilement. */
+.gantt-row-label {
+  min-width: 240px; width: 240px; padding: 8px 16px;
+  display: flex; align-items: center;
+  font-size: 13px; font-weight: 500;
+  border-right: 1px solid var(--border); flex-shrink: 0;
+  position: sticky; left: 0; z-index: 3; background: var(--surface);
+}
+.gantt-timeline { flex: 1; position: relative; display: flex; align-items: center; }
+
+.gantt-grid-line {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--border); opacity: .5; pointer-events: none;
+}
+.gantt-today-line {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: var(--accent); opacity: .8; z-index: 2; pointer-events: none;
+}
+
+.bar-wrap { position: absolute; display: flex; align-items: center; }
+
+.prest-bar {
+  height: 28px; border-radius: 4px; display: flex; align-items: center;
+  padding: 0 8px; font-size: 11px; font-weight: 500; cursor: pointer;
+  transition: filter .15s, transform .15s; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; border: 1px solid transparent;
+  gap: 4px; min-width: 4px;
+}
+.prest-bar:hover { filter: brightness(1.2); transform: translateY(-1px); z-index: 5; }
+
+.bar-en_cours    { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+.bar-terminee    { background: rgba(100,116,139,.15); border-color: #475569; color: #94a3b8; }
+/* Barre spéculative (opportunité/candidature encore en attente, main.js pipelineItemFrom*()) —
+   violet + pointillé, seul mécanisme "pas encore confirmé" restant côté Gantt. */
+.bar-pipeline    { background: var(--purple-soft); border-color: var(--purple); border-style: dashed; color: var(--purple); }
+
+.ext-bar {
+  height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
+  border-left: none; display: flex; align-items: center; padding: 0 6px;
+  font-size: 10px; font-weight: 600; opacity: .7; min-width: 4px;
+}
+.ext-bar-en_cours    { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.06); }
+.ext-bar-terminee    { border-color: #475569; color: #94a3b8; background: rgba(71,85,105,.08); }
+
+.exit-bar {
+  height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
+  border-left: none; display: flex; align-items: center; padding: 0 6px;
+  font-size: 10px; opacity: .35; min-width: 4px;
+  background: repeating-linear-gradient(90deg, transparent 0px, transparent 3px, rgba(100,116,139,.25) 3px, rgba(100,116,139,.25) 4px);
+  border-color: #475569; color: #94a3b8;
+}
+
+.bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.bar-en_cours .bar-dot    { background: var(--green); }
+.bar-terminee .bar-dot    { background: #475569; }
+.bar-pipeline .bar-dot    { background: var(--purple); }

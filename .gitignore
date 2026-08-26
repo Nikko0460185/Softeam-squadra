@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Données locales SQUADRA (potentiellement de vraies données, jamais publiques)
+/data/

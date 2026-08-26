@@ -1,0 +1,34 @@
+.status-pill {
+  padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+  font-size: 11px; font-weight: 600; flex-shrink: 0; display: inline-block; text-align: center;
+}
+.pill-en_cours    { background: var(--green-soft); color: var(--green); }
+.pill-terminee    { background: rgba(100,116,139,.15); color: #94a3b8; }
+.pill-arrivee     { background: var(--orange-soft); color: var(--orange); }
+.pill-sortie      { background: var(--red-soft); color: var(--red); }
+
+/* Opportunité (besoin client) */
+.pill-opp-ouvert     { background: var(--blue-soft); color: var(--blue); }
+.pill-opp-pourvu     { background: var(--green-soft); color: var(--green); }
+.pill-opp-abandonne  { background: rgba(100,116,139,.15); color: #94a3b8; }
+
+/* Candidature (un consultant sur une opportunité) */
+.pill-cand-en_attente { background: var(--blue-soft); color: var(--blue); }
+.pill-cand-gagnee   { background: var(--green-soft); color: var(--green); }
+.pill-cand-perdue   { background: var(--red-soft); color: var(--red); }
+
+.status-pills { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Style "contour" (fond transparent + bordure) volontairement différent des .status-pill
+   (fond plein) : Type et Statut sont 2 axes d'info différents, parfois avec la même teinte
+   (ex. Mission/Opportunité en bleu) — le contour évite de les confondre au premier coup d'œil. */
+.nature-badge {
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700;
+  letter-spacing: .03em; text-transform: uppercase; flex-shrink: 0;
+  background: transparent; border: 1px solid currentColor;
+}
+.nature-mission        { color: var(--accent); }
+.nature-forfait        { color: var(--purple); }
+.nature-projet_interne { color: var(--yellow); }
+.nature-opportunite    { color: var(--blue); }

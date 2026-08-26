@@ -1,0 +1,16 @@
+.revision-list { margin-top: 4px; }
+
+.revision-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.revision-item:last-child { border-bottom: none; }
+
+.revision-date { color: var(--text-dim); font-size: 12px; flex-shrink: 0; }
+.revision-tjm { font-weight: 700; color: var(--accent); flex: 1; }
+.revision-delta { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+.delta-up   { background: var(--green-soft); color: var(--green); }
+.delta-down { background: var(--red-soft); color: var(--red); }
+
+.add-revision-row { display: flex; gap: 8px; margin-top: 10px; align-items: flex-end; }
+.add-revision-row .form-input { flex: 1; }

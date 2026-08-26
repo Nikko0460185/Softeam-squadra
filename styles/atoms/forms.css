@@ -1,0 +1,16 @@
+.form-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block; }
+/* (obligatoire)/(optionnel) : texte lisible plutôt qu'un simple astérisque, plus accessible
+   (annoncé par les lecteurs d'écran, pas besoin de connaître la convention "*" au préalable). */
+.form-label .opt, .form-label .req { font-weight: 400; color: var(--text-muted); }
+
+.form-input, .form-select, .form-textarea {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 13px;
+  padding: 8px 10px; outline: none; transition: border-color .15s; font-family: inherit;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+
+/* Champ obligatoire resté vide après tentative d'enregistrement (main.js markFieldInvalid()) */
+.form-input.field-invalid, .form-select.field-invalid, .form-textarea.field-invalid { border-color: var(--red); }
+.form-textarea { resize: vertical; min-height: 60px; }
+.form-select option { background: var(--surface2); }

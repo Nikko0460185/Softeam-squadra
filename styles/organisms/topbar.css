@@ -1,0 +1,54 @@
+#topbar {
+  height: 56px; background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0;
+}
+
+/* Boutons pilule de filtre/sélection — partagé avec .period-tab (styles/organisms/stats.css),
+   même rôle (choisir une option parmi plusieurs, état actif en surbrillance) donc mêmes règles.
+   Deux noms de classe distincts conservés : setFilter() cible spécifiquement .filter-btn via
+   querySelectorAll, les fusionner casserait la synchronisation de l'état actif des filtres de statut. */
+.filter-btn, .period-tab {
+  padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border);
+  background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; transition: all .15s;
+}
+.filter-btn:hover, .period-tab:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active, .period-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* Piste compacte pour un groupe de filtres à choix unique (Statut, Type...) : un seul fond/
+   bordure partagé au lieu d'une pastille bordée par bouton — plus compact, et communique
+   visuellement l'exclusion mutuelle (un seul choix actif), contrairement à des pastilles
+   individuelles qui pourraient laisser croire à un choix cumulatif. */
+.filter-track {
+  display: flex; gap: 2px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 2px;
+}
+.filter-track .filter-btn { border: none; padding: 4px 12px; }
+.filter-track .filter-btn:hover { background: var(--surface3); }
+.filter-track .filter-btn.active { border: none; }
+.filter-track .filter-btn.active:hover { background: var(--accent-soft); }
+
+/* Onglets Consultants/Clients (Vue liste) : même piste compacte que les groupes de filtres
+   (choix unique, un seul actif à la fois) — .viewmode-tabs est désormais un simple alias de
+   .filter-track, gardé comme nom de classe distinct uniquement parce que setViewMode()/
+   setFilter() ciblent chacun leur groupe séparément via querySelectorAll. */
+.viewmode-tabs { display: flex; gap: 2px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 2px; }
+.filter-btn.viewmode-btn { border: none; padding: 4px 12px; }
+.filter-btn.viewmode-btn:hover { background: var(--surface3); }
+.filter-btn.viewmode-btn.active { border: none; }
+.filter-btn.viewmode-btn.active:hover { background: var(--accent-soft); }
+
+/* Filtres/onglets toujours sur la 1ère ligne (.legend-row), légende de couleurs (propre au
+   Gantt) sur une 2e ligne en dessous — pour que la ligne des filtres reste à la même position
+   visuelle en changeant de vue, plutôt que de dépendre du contenu qui varie entre Gantt et
+   Vue liste (celle-ci n'a pas de légende de couleurs). */
+.legend {
+  display: flex; flex-direction: column; gap: 6px; padding: 6px 20px;
+  background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.legend-row { display: flex; flex-wrap: wrap; row-gap: 6px; gap: 14px; align-items: center; min-height: 32px; }
+/* Étiquette à gauche d'un groupe de filtres (Statut, Type...) : espace visuellement les
+   groupes entre eux, et sert de point d'ancrage nommé via aria-labelledby (voir index.html
+   role="group") pour les lecteurs d'écran — un simple texte visuel seul ne suffirait pas. */
+.filter-group-label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; border: 1px solid; }
