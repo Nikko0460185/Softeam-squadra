@@ -44,7 +44,7 @@ Puis ouvrir [http://localhost:3000](http://localhost:3000) dans un navigateur.
 │   ├── opportunites.json
 │   └── candidatures.json
 └── styles/
-    ├── main.css         # Point d'entrée CSS (imports)
+    ├── main.css         # Référence de l'ordre des fichiers (non chargé — index.html a un <link> par fichier)
     ├── tokens.css       # Variables de design (couleurs, radius…)
     ├── layout.css       # Structure générale
     ├── utilities.css    # Toast, états vides, scrollbar

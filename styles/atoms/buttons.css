@@ -1,6 +1,6 @@
 .btn-primary {
   padding: 7px 14px; background: var(--accent); color: white; border: none;
-  border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer;
+  border-radius: var(--radius); font-size:var(--text-base); font-weight: 500; cursor: pointer;
   display: flex; align-items: center; gap: 6px; transition: opacity .15s; flex-shrink: 0;
 }
 .btn-primary:hover { opacity: .85; }
@@ -8,14 +8,14 @@
 .btn-secondary {
   padding: 7px 14px; background: none; color: var(--text-dim);
   border: 1px solid var(--border); border-radius: var(--radius);
-  font-size: 13px; cursor: pointer; transition: all .15s;
+  font-size:var(--text-base); cursor: pointer; transition: all .15s;
 }
 .btn-secondary:hover { border-color: var(--text-dim); color: var(--text); }
 
 .btn-danger {
   padding: 7px 14px; background: var(--red-soft); color: var(--red);
   border: 1px solid var(--red); border-radius: var(--radius);
-  font-size: 13px; cursor: pointer; margin-right: auto;
+  font-size:var(--text-base); cursor: pointer; margin-right: auto;
 }
 .btn-danger:hover { opacity: .8; }
 
@@ -26,10 +26,12 @@
   transition: all .15s; flex-shrink: 0;
 }
 .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+.btn-icon:disabled { opacity: .4; cursor: not-allowed; }
+.btn-icon:disabled:hover { border-color: var(--border); color: var(--text-muted); }
 
 .btn-add-small {
   padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--text-dim); font-size: 13px;
+  border-radius: var(--radius); color: var(--text-dim); font-size:var(--text-base);
   cursor: pointer; flex-shrink: 0; transition: all .15s; white-space: nowrap;
 }
 .btn-add-small:hover { border-color: var(--accent); color: var(--accent); }

@@ -1,17 +1,21 @@
 .status-pill {
   padding: 3px 10px; border-radius: 20px; white-space: nowrap;
-  font-size: 11px; font-weight: 600; flex-shrink: 0; display: inline-block; text-align: center;
+  font-size:var(--text-xs); font-weight: 600; flex-shrink: 0; display: inline-block; text-align: center;
+  /* Sans ça, en enfant direct d'une grille (Vue liste), la pastille s'étire par défaut sur toute
+     la largeur de sa colonne (justify-items:stretch, comportement par défaut de CSS Grid) — sans
+     effet dans les contextes hors grille (en-tête de modale, sidebar...). */
+  justify-self: start; min-width: 92px; /* calé sur "En attente", le libellé le plus long des 3 familles de statut */
 }
 .pill-en_cours    { background: var(--green-soft); color: var(--green); }
 .pill-en_pause    { background: var(--blue-soft); color: var(--blue); }
-.pill-terminee    { background: rgba(100,116,139,.15); color: #94a3b8; }
+.pill-terminee    { background: var(--neutral-soft); color: var(--text-dim); }
 .pill-arrivee     { background: var(--orange-soft); color: var(--orange); }
 .pill-sortie      { background: var(--red-soft); color: var(--red); }
 
 /* Opportunité (besoin client) */
 .pill-opp-ouvert     { background: var(--blue-soft); color: var(--blue); }
 .pill-opp-pourvu     { background: var(--green-soft); color: var(--green); }
-.pill-opp-abandonne  { background: rgba(100,116,139,.15); color: #94a3b8; }
+.pill-opp-abandonne  { background: var(--neutral-soft); color: var(--text-dim); }
 
 /* Candidature (un consultant sur une opportunité) */
 .pill-cand-en_attente { background: var(--blue-soft); color: var(--blue); }
@@ -25,8 +29,9 @@
    (ex. Mission/Opportunité en bleu) — le contour évite de les confondre au premier coup d'œil. */
 .nature-badge {
   display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-  padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700;
-  letter-spacing: .03em; text-transform: uppercase; flex-shrink: 0;
+  padding: 2px 8px; border-radius: 20px; font-size:var(--text-2xs); font-weight: 700;
+  letter-spacing: .03em; flex-shrink: 0; justify-self: start;
+  min-width: 124px; /* calé sur "Projet interne", le libellé le plus long, quitte à laisser de l'air sur "Mission"/"Forfait" */
   background: transparent; border: 1px solid currentColor;
 }
 .nature-mission        { color: var(--accent); }

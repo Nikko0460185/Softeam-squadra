@@ -4,7 +4,30 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SQUADRA — Pilotage & Staffing</title>
-  <link rel="stylesheet" href="styles/main.css" />
+  <!-- Feuilles de style chargées directement (plutôt que via styles/main.css et ses @import
+       en chaîne) : un @import ne peut être récupéré qu'une fois le fichier qui le précède
+       chargé, donc le navigateur les récupère les uns après les autres — une page qui a pu
+       s'afficher un instant sans styles pendant ce chargement en cascade. Des balises <link>
+       sont toutes récupérées en parallèle dès le départ. Ordre identique à celui documenté
+       dans styles/main.css (conservé comme référence de l'ordre, mais plus chargé lui-même). -->
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/atoms/avatar.css" />
+  <link rel="stylesheet" href="styles/atoms/buttons.css" />
+  <link rel="stylesheet" href="styles/atoms/forms.css" />
+  <link rel="stylesheet" href="styles/atoms/badges.css" />
+  <link rel="stylesheet" href="styles/molecules/nav-item.css" />
+  <link rel="stylesheet" href="styles/molecules/consultant-item.css" />
+  <link rel="stylesheet" href="styles/molecules/form-group.css" />
+  <link rel="stylesheet" href="styles/molecules/revision.css" />
+  <link rel="stylesheet" href="styles/molecules/stat-card.css" />
+  <link rel="stylesheet" href="styles/organisms/sidebar.css" />
+  <link rel="stylesheet" href="styles/organisms/topbar.css" />
+  <link rel="stylesheet" href="styles/organisms/modal.css" />
+  <link rel="stylesheet" href="styles/organisms/gantt.css" />
+  <link rel="stylesheet" href="styles/organisms/list.css" />
+  <link rel="stylesheet" href="styles/organisms/stats.css" />
+  <link rel="stylesheet" href="styles/utilities.css" />
 </head>
 <body>
 
@@ -14,8 +37,13 @@
     <div class="logo">SQUADRA <span>Pilotage & Staffing</span></div>
   </div>
 
+  <!-- Rempli par JS (relocateTopbarActions) uniquement en fenêtre étroite : reçoit les 2
+       boutons "Ajouter..." déplacés depuis la topbar, pour que tout reste regroupé et lisible
+       au même endroit plutôt que masqué en icône. Vide et donc invisible en desktop. -->
+  <div class="sidebar-section" id="sidebar-actions"></div>
+
   <div class="sidebar-section">
-    <div class="sidebar-section-title">Navigation</div>
+    <h3 class="sidebar-section-title">Navigation</h3>
     <div class="nav-item active" data-view="gantt" onclick="switchView('gantt')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="3" rx="1"/><rect x="3" y="10" width="12" height="3" rx="1"/><rect x="3" y="16" width="15" height="3" rx="1"/></svg>
       Timeline Gantt
@@ -31,7 +59,7 @@
   </div>
 
   <div class="sidebar-section">
-    <div class="sidebar-section-title">Consultants (<span id="cons-count">0</span>)</div>
+    <h3 class="sidebar-section-title">Consultants (<span id="cons-count">0</span>)</h3>
   </div>
   <div class="consultant-list" id="cons-list"></div>
   <button id="btn-add-consultant" class="btn-primary" style="width:calc(100% - 24px);margin:8px 12px;justify-content:center" onclick="openConsModal()">
@@ -40,21 +68,41 @@
   </button>
 </div>
 
+<!-- Fond assombri derrière la sidebar quand elle s'ouvre en tiroir (fenêtre étroite) -->
+<div id="sidebar-backdrop" onclick="closeSidebarDrawer()"></div>
+
 <!-- MAIN -->
 <div id="main">
   <div id="topbar">
-    <button class="btn-primary" onclick="openOpportuniteModal(null)">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Ajouter une opportunité
+    <!-- Visible uniquement en fenêtre étroite (voir styles/organisms/topbar.css) : ouvre la
+         sidebar en tiroir, qui contient alors aussi les 2 boutons "Ajouter...". -->
+    <button class="btn-icon" id="btn-sidebar-toggle" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="sidebar" onclick="toggleSidebarDrawer()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
-    <button class="btn-primary" onclick="openPrestModal(null)">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Ajouter une prestation
-    </button>
-    <div id="profile-badge" style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-left:auto">
-      <span id="profile-badge-label"></span>
-      <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="openProfileSwitcher()">Changer de profil</button>
+    <div id="topbar-actions" style="display:flex;gap:12px">
+      <button class="btn-primary" id="btn-add-opportunite" onclick="openOpportuniteModal(null)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Ajouter une opportunité
+      </button>
+      <button class="btn-primary" id="btn-add-prestation" onclick="openPrestModal(null)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Ajouter une prestation
+      </button>
     </div>
+    <details id="user-menu" class="user-menu">
+      <summary class="user-menu-summary" aria-label="Menu utilisateur">
+        <span id="profile-badge-label"></span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
+      </summary>
+      <div class="user-menu-panel">
+        <div id="text-scale-control" role="group" aria-label="Taille du texte">
+          <button class="btn-icon" id="btn-text-scale-down" onclick="decreaseTextScale()" aria-label="Réduire la taille du texte" title="Réduire la taille du texte">A-</button>
+          <span id="text-scale-indicator" aria-live="polite"></span>
+          <button class="btn-icon" id="btn-text-scale-up" onclick="increaseTextScale()" aria-label="Agrandir la taille du texte" title="Agrandir la taille du texte">A+</button>
+        </div>
+        <button class="btn-secondary" onclick="openProfileSwitcher()">Changer de profil</button>
+      </div>
+    </details>
   </div>
 
   <div id="content">
@@ -91,17 +139,17 @@
         <div class="legend-row">
           <span class="filter-group-label">Légende :</span>
           <span class="legend-item"><span class="legend-dot" style="background:var(--green-soft);border-color:var(--green)"></span>En cours</span>
-          <span class="legend-item"><span class="legend-dot" style="background:rgba(100,116,139,.15);border-color:#475569"></span>Terminée</span>
+          <span class="legend-item"><span class="legend-dot" style="background:var(--neutral-soft);border-color:var(--neutral)"></span>Terminée</span>
           <span class="legend-item"><span class="legend-dot" style="background:rgba(34,197,94,.06);border-color:var(--green);border-style:dashed"></span>Prolongation</span>
-          <span class="legend-item"><span class="legend-dot" style="background:repeating-linear-gradient(90deg,transparent 0,transparent 2px,rgba(100,116,139,.3) 2px,rgba(100,116,139,.3) 3px);border-color:#475569;border-style:dashed;opacity:.6"></span>Fin anticipée (période annulée)</span>
+          <span class="legend-item"><span class="legend-dot" style="background:repeating-linear-gradient(90deg,transparent 0,transparent 2px,rgba(100,116,139,.3) 2px,rgba(100,116,139,.3) 3px);border-color:var(--neutral);border-style:dashed;opacity:.6"></span>Fin anticipée (période annulée)</span>
           <span class="legend-item"><span class="legend-dot" style="background:var(--purple-soft);border-color:var(--purple);border-style:dashed"></span>Pipeline (opportunité)</span>
         </div>
       </div>
       <div id="gantt-timenav" role="group" aria-label="Navigation dans le temps">
-        <button class="btn-icon" style="font-size:14px;font-weight:700" onclick="scrollGanttBy(-1)" aria-label="Mois précédent" title="Mois précédent">‹</button>
-        <button class="btn-secondary" style="padding:4px 10px;font-size:12px" onclick="scrollGanttToToday()">Aujourd'hui</button>
-        <button class="btn-icon" style="font-size:14px;font-weight:700" onclick="scrollGanttBy(1)" aria-label="Mois suivant" title="Mois suivant">›</button>
-        <span id="gantt-nav-hint" style="font-size:11px;color:var(--text-muted)">Naviguez dans le temps avec ces boutons, les flèches ← → (cliquez d'abord dans la chronologie), ou le défilement horizontal.</span>
+        <button class="btn-icon" style="font-size:var(--text-md);font-weight:700" onclick="scrollGanttBy(-1)" aria-label="Mois précédent" title="Mois précédent">‹</button>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:var(--text-sm)" onclick="scrollGanttToToday()">Aujourd'hui</button>
+        <button class="btn-icon" style="font-size:var(--text-md);font-weight:700" onclick="scrollGanttBy(1)" aria-label="Mois suivant" title="Mois suivant">›</button>
+        <span id="gantt-nav-hint" style="font-size:var(--text-xs);color:var(--text-muted)">Naviguez dans le temps avec ces boutons, les flèches ← → (cliquez d'abord dans la chronologie), ou le défilement horizontal.</span>
       </div>
       <div id="gantt-scroll" style="overflow:auto;flex:1" tabindex="0" aria-label="Chronologie Gantt" aria-describedby="gantt-nav-hint">
         <div id="gantt-wrapper">
@@ -169,11 +217,11 @@
            directe, rien à résumer par définition, seul le statut s'affiche. -->
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
         <span class="status-pill" id="f-status-display"></span>
-        <div id="mission-dates-display" style="font-size:12px;color:var(--text-muted)"></div>
-        <div id="current-tjm-display" style="font-size:12px;color:var(--text-muted)"></div>
-        <div id="current-fte-display" style="font-size:12px;color:var(--text-muted)"></div>
-        <div id="marge-hebdo-display" style="font-size:12px;color:var(--text-muted)"></div>
-        <div id="last-mission-event-display" style="font-size:12px;color:var(--text-muted)"></div>
+        <div id="mission-dates-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
+        <div id="current-tjm-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
+        <div id="current-fte-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
+        <div id="marge-hebdo-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
+        <div id="last-mission-event-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
       </div>
       <div class="modal-info-banner" id="prest-origin-banner" style="display:none;margin:0 0 16px">
         <span>Issue d'une opportunité</span>
@@ -183,10 +231,10 @@
       <!-- Position 2 : modalités de la prestation — tout ce qui définit la mission elle-même
            (contrat, client, dates, contraintes, qui est staffé). Tarification et Mission
            (prolongation/sortie) sont des espaces à part, en positions 3 et 4. -->
-      <div class="section-title" style="margin-bottom:8px">Modalités de la prestation</div>
+      <h3 class="section-title" style="margin-bottom:8px">Modalités de la prestation</h3>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Nature</label>
+          <label class="form-label" for="f-nature">Nature</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Type de contrat avec le client.</div>
           <div class="form-error" id="err-f-nature"></div>
           <select class="form-select" id="f-nature">
@@ -197,7 +245,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Titre du profil</label>
+          <label class="form-label" for="f-titre">Titre du profil</label>
           <div class="form-help">Intitulé du poste occupé sur cette mission.</div>
           <input type="text" class="form-input" id="f-titre" placeholder="Intitulé du poste" />
         </div>
@@ -205,13 +253,13 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Client</label>
+          <label class="form-label" for="f-client">Client</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
           <div class="form-error" id="err-f-client"></div>
           <input type="text" class="form-input" id="f-client" placeholder="Nom du client" />
         </div>
         <div class="form-group">
-          <label class="form-label">Service client</label>
+          <label class="form-label" for="f-service">Service client</label>
           <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
           <div class="form-error" id="err-f-service"></div>
           <input type="text" class="form-input" id="f-service" placeholder="Service ou pôle" />
@@ -222,13 +270,13 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Date de début</label>
+          <label class="form-label" for="f-start">Date de début</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Date de démarrage de la mission.</div>
           <div class="form-error" id="err-f-start"></div>
           <input type="date" class="form-input" id="f-start" oninput="updateBadges()" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de fin prévue</label>
+          <label class="form-label" for="f-end">Date de fin prévue</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Peut être prolongée plus bas sans changer cette date.</div>
           <div class="form-error" id="err-f-end"></div>
           <input type="date" class="form-input" id="f-end" oninput="updateBadges()" />
@@ -237,13 +285,13 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Limite d'UO / an (j)</label>
+          <label class="form-label" for="f-uo">Limite d'UO / an (j)</label>
           <div class="form-help">Plafond annuel de jours facturables.</div>
           <div class="form-error" id="err-f-uo"></div>
           <input type="number" class="form-input" id="f-uo" placeholder="Nombre de jours par an" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label">Consultant</label>
+          <label class="form-label" for="f-cons">Consultant</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Consultant affecté à cette prestation.</div>
           <div class="form-error" id="err-f-cons"></div>
           <select class="form-select" id="f-cons" onchange="updateBadges()"></select>
@@ -256,17 +304,17 @@
            opportunité, ils sont masqués et remplacés par #tarif-history-block (table en lecture
            seule + bouton "Modifier la tarification") : les deux blocs sont mutuellement
            exclusifs, jamais affichés en même temps. -->
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</div>
+      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</h3>
 
       <div class="form-row" id="tjm-fte-row">
         <div class="form-group">
-          <label class="form-label">TJM initial (€/j)</label>
+          <label class="form-label" for="f-tjm">TJM initial (€/j)</label>
           <div class="form-help" id="help-f-tjm"><span class="req">(obligatoire)</span> Taux journalier moyen facturé au client.</div>
           <div class="form-error" id="err-f-tjm"></div>
           <input type="number" class="form-input" id="f-tjm" placeholder="Montant en €/jour" min="0" oninput="updateBadges()" />
         </div>
         <div class="form-group">
-          <label class="form-label">Taux d'activité</label>
+          <label class="form-label" for="f-fte">Taux d'activité</label>
           <div class="form-help" id="help-f-fte">Part du temps consacrée à cette mission (5/5 = temps plein).</div>
           <div class="form-error" id="err-f-fte"></div>
           <select class="form-select" id="f-fte" onchange="updateBadges()">
@@ -283,12 +331,12 @@
           <table class="tarif-table" id="tarif-table">
             <thead>
               <tr>
-                <th>TJM</th>
-                <th>Taux d'activité</th>
-                <th>Date de mise en place</th>
-                <th>Marge hebdo</th>
-                <th>Tendance</th>
-                <th></th>
+                <th scope="col">TJM</th>
+                <th scope="col">Taux d'activité</th>
+                <th scope="col">Date de mise en place</th>
+                <th scope="col">Marge hebdo</th>
+                <th scope="col">Tendance</th>
+                <th scope="col"></th>
               </tr>
             </thead>
             <tbody id="tarif-table-body"></tbody>
@@ -302,12 +350,12 @@
         <div id="tarif-edit-section" style="display:none">
           <div class="add-revision-row" style="margin-top:4px">
             <div style="flex:1">
-              <label class="form-label">TJM (€/j)</label>
+              <label class="form-label" for="rev-tjm">TJM (€/j)</label>
               <div class="form-help">Laisser vide si seul le taux d'activité change.</div>
               <input type="number" class="form-input" id="rev-tjm" placeholder="Montant en €/jour" min="0" />
             </div>
             <div style="flex:1">
-              <label class="form-label">Taux d'activité</label>
+              <label class="form-label" for="rev-fte">Taux d'activité</label>
               <div class="form-help">Laisser sur "Inchangé" si seul le TJM change.</div>
               <select class="form-select" id="rev-fte">
                 <option value="">Inchangé</option>
@@ -317,7 +365,7 @@
               </select>
             </div>
             <div style="flex:1">
-              <label class="form-label">Date de mise en place</label>
+              <label class="form-label" for="rev-date">Date de mise en place</label>
               <div class="form-help">À partir de quand ce changement s'applique.</div>
               <input type="date" class="form-input" id="rev-date" />
             </div>
@@ -331,7 +379,7 @@
            avant que la prestation existe). Une "modification" = un type (prolongation / pause /
            sortie anticipée) + une date d'effet — plusieurs entrées possibles dans le temps,
            comme les révisions TJM (voir p.missionEvents, main.js). -->
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Modification de la mission</div>
+      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Modification de la mission</h3>
 
       <div id="mission-history-block" style="display:none">
         <div class="form-help" style="margin-bottom:10px">Prolongations, pauses et sorties anticipées appliquées depuis le début de la mission.</div>
@@ -339,10 +387,10 @@
           <table class="tarif-table" id="mission-table">
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Date d'effet</th>
-                <th>Reprise</th>
-                <th></th>
+                <th scope="col">Type</th>
+                <th scope="col">Date d'effet</th>
+                <th scope="col">Reprise</th>
+                <th scope="col"></th>
               </tr>
             </thead>
             <tbody id="mission-table-body"></tbody>
@@ -356,7 +404,7 @@
         <div id="mission-edit-section" style="display:none">
           <div class="add-revision-row" style="margin-top:4px">
             <div style="flex:1">
-              <label class="form-label">Type</label>
+              <label class="form-label" for="ev-type">Type</label>
               <div class="form-help">Nature de la modification.</div>
               <select class="form-select" id="ev-type" onchange="updateEvTypeUI()">
                 <option value="prolongation">Prolongation</option>
@@ -365,12 +413,12 @@
               </select>
             </div>
             <div style="flex:1">
-              <label class="form-label">Date d'effet</label>
+              <label class="form-label" for="ev-date">Date d'effet</label>
               <div class="form-help">À partir de quand ce changement s'applique.</div>
               <input type="date" class="form-input" id="ev-date" />
             </div>
             <div style="flex:1" id="ev-resume-wrap">
-              <label class="form-label">Date de reprise</label>
+              <label class="form-label" for="ev-resume">Date de reprise</label>
               <div class="form-help">Pause uniquement — laisser vide si pas encore connue.</div>
               <input type="date" class="form-input" id="ev-resume" />
             </div>
@@ -380,7 +428,7 @@
       </div>
 
       <!-- Notes vraiment en dernier -->
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Notes</div>
+      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Notes</h3>
       <div class="form-group" style="margin-top:2px">
         <textarea class="form-textarea" id="f-notes" placeholder="Contacts, informations importantes…"></textarea>
       </div>
@@ -398,45 +446,45 @@
   <div class="modal-box" id="cons-modal-box">
     <div class="modal-header">
       <h2 id="cons-modal-title">Nouveau consultant</h2>
-      <button class="btn-icon" onclick="closeModal('cons-overlay')">
+      <button class="btn-icon" onclick="closeModal('cons-overlay')" aria-label="Fermer">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="cf-id" />
       <div class="form-group">
-        <label class="form-label">Prénom & Nom <span class="req">(obligatoire)</span></label>
+        <label class="form-label" for="cf-name">Prénom & Nom <span class="req">(obligatoire)</span></label>
         <input type="text" class="form-input" id="cf-name" placeholder="Jean Dupont" />
       </div>
       <div class="form-group">
-        <label class="form-label">Rôle / Expertise</label>
+        <label class="form-label" for="cf-role">Rôle / Expertise</label>
         <input type="text" class="form-input" id="cf-role" placeholder="Développeur Senior, Chef de projet…" />
       </div>
       <div class="form-group">
-        <label class="form-label">Email</label>
+        <label class="form-label" for="cf-email">Email</label>
         <input type="email" class="form-input" id="cf-email" placeholder="jean.dupont@example.com" />
       </div>
-      <div class="section-title" style="margin-top:14px;margin-bottom:8px">Appartenance à l'entreprise</div>
+      <h3 class="section-title" style="margin-top:14px;margin-bottom:8px">Appartenance à l'entreprise</h3>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Date d'entrée <span class="req">(obligatoire)</span></label>
+          <label class="form-label" for="cf-date-entree">Date d'entrée <span class="req">(obligatoire)</span></label>
           <input type="date" class="form-input" id="cf-date-entree" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de sortie</label>
+          <label class="form-label" for="cf-date-sortie">Date de sortie</label>
           <input type="date" class="form-input" id="cf-date-sortie" />
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Laisser vide si toujours en poste</div>
+          <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px">Laisser vide si toujours en poste</div>
         </div>
       </div>
-      <div class="section-title" style="margin-top:14px;margin-bottom:8px">Coût complet</div>
+      <h3 class="section-title" style="margin-top:14px;margin-bottom:8px">Coût complet</h3>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Coût complet (€/j)</label>
+          <label class="form-label" for="cf-cout-complet">Coût complet (€/j)</label>
           <input type="number" class="form-input" id="cf-cout-complet" placeholder="400" min="0" oninput="updateTcDisplay()" />
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Coût employeur total par jour travaillé</div>
+          <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px">Coût employeur total par jour travaillé</div>
         </div>
         <div class="form-group" style="display:flex;flex-direction:column;justify-content:center">
-          <div id="cf-tc-display" style="font-size:13px;color:var(--text-muted)"></div>
+          <div id="cf-tc-display" style="font-size:var(--text-base);color:var(--text-muted)"></div>
         </div>
       </div>
 
@@ -444,11 +492,11 @@
       <div class="revision-list" id="cost-revision-list"></div>
       <div class="add-revision-row">
         <div style="flex:1">
-          <div class="form-label" style="font-size:11px;margin-bottom:4px">Date de mise en place</div>
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Date de mise en place</div>
           <input type="date" class="form-input" id="cost-rev-date" />
         </div>
         <div style="flex:1">
-          <div class="form-label" style="font-size:11px;margin-bottom:4px">Nouveau coût complet (€/j)</div>
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Nouveau coût complet (€/j)</div>
           <input type="number" class="form-input" id="cost-rev-value" placeholder="450" min="0" />
         </div>
         <button class="btn-add-small" onclick="addCostRevision()">+ Ajouter</button>
@@ -470,7 +518,7 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="of-id" />
-      <div id="of-created-line" style="font-size:11px;color:var(--text-muted);margin:0 0 12px" hidden></div>
+      <div id="of-created-line" style="font-size:var(--text-xs);color:var(--text-muted);margin:0 0 12px" hidden></div>
 
       <!-- Modalités regroupées à part des candidatures : ce sont 2 natures d'info différentes
            (les conditions du besoin vs. qui y répond) — même logique que la modale Prestation
@@ -478,10 +526,10 @@
            modale Prestation pour les champs communs (Nature, Titre du profil, Client, Service
            client, Dates, Limite d'UO) — seule différence assumée : "estimé" sur TJM/Taux
            d'activité, une opportunité n'a encore rien de confirmé. -->
-      <div class="section-title" style="margin-bottom:8px">Modalités de l'opportunité</div>
+      <h3 class="section-title" style="margin-bottom:8px">Modalités de l'opportunité</h3>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Nature</label>
+          <label class="form-label" for="of-nature">Nature</label>
           <div class="form-help">Type de contrat avec le client, si déjà connu.</div>
           <select class="form-select" id="of-nature">
             <option value="">— Pas encore connue —</option>
@@ -491,7 +539,7 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Titre du profil</label>
+          <label class="form-label" for="of-titre">Titre du profil</label>
           <div class="form-help">Intitulé du poste recherché.</div>
           <input type="text" class="form-input" id="of-titre" placeholder="Intitulé du poste" />
         </div>
@@ -499,13 +547,13 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Client</label>
+          <label class="form-label" for="of-client">Client</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
           <div class="form-error" id="err-of-client"></div>
           <input type="text" class="form-input" id="of-client" placeholder="Nom du client" />
         </div>
         <div class="form-group">
-          <label class="form-label">Service client</label>
+          <label class="form-label" for="of-service">Service client</label>
           <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
           <input type="text" class="form-input" id="of-service" placeholder="Service ou pôle" />
         </div>
@@ -515,12 +563,12 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Date de début</label>
+          <label class="form-label" for="of-start">Date de début</label>
           <div class="form-help">Date de démarrage envisagée, pas toujours connue dès la détection.</div>
           <input type="date" class="form-input" id="of-start" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de fin prévue</label>
+          <label class="form-label" for="of-end">Date de fin prévue</label>
           <div class="form-help">Date de fin envisagée.</div>
           <div class="form-error" id="err-of-end"></div>
           <input type="date" class="form-input" id="of-end" />
@@ -529,12 +577,12 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Limite d'UO / an (j)</label>
+          <label class="form-label" for="of-uo">Limite d'UO / an (j)</label>
           <div class="form-help">Plafond annuel de jours facturables.</div>
           <input type="number" class="form-input" id="of-uo" placeholder="Nombre de jours par an" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label">Statut</label>
+          <label class="form-label" for="of-status">Statut</label>
           <div class="form-help">Se met à jour automatiquement dès qu'une candidature est ajoutée ou change.</div>
           <select class="form-select" id="of-status">
             <option value="ouvert">Ouvert</option>
@@ -544,15 +592,15 @@
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</div>
+      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</h3>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">TJM estimé (€/j)</label>
+          <label class="form-label" for="of-tjm">TJM estimé (€/j)</label>
           <div class="form-help">Taux journalier moyen envisagé, pas encore confirmé.</div>
           <input type="number" class="form-input" id="of-tjm" placeholder="Montant en €/jour" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label">Taux d'activité estimé</label>
+          <label class="form-label" for="of-fte">Taux d'activité estimé</label>
           <div class="form-help">Part du temps envisagée, pas encore confirmée (5/5 = temps plein).</div>
           <select class="form-select" id="of-fte">
             <option value="">— Pas encore connu —</option>
@@ -563,7 +611,7 @@
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Candidatures</div>
+      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Candidatures</h3>
       <div id="opp-candidatures-list"></div>
       <button class="btn-add-small" style="margin-top:8px" onclick="addCandidatureInModal()">+ Ajouter un candidat</button>
     </div>
@@ -583,7 +631,7 @@
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label class="form-label">Profil</label>
+        <label class="form-label" for="profile-select">Profil</label>
         <select class="form-select" id="profile-select"></select>
       </div>
     </div>

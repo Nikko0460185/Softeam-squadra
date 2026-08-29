@@ -15,18 +15,18 @@
    toujours pouvoir relier une barre à son consultant/client sans perdre le repère. */
 .gantt-label-col {
   min-width: 240px; width: 240px; padding: 10px 16px;
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  font-size:var(--text-sm); font-weight: 600; color: var(--text-muted);
   border-right: 1px solid var(--border); flex-shrink: 0;
   position: sticky; left: 0; z-index: 1; background: var(--surface);
 }
 .gantt-months { display: flex; flex: 1; }
 .gantt-month {
-  flex: 1; min-width: 80px; text-align: center; font-size: 11px;
+  flex: 1; min-width: 80px; text-align: center; font-size:var(--text-xs);
   color: var(--text-muted); padding: 8px 4px; border-right: 1px solid var(--border);
 }
 .gantt-month.current-month { background: rgba(79,110,247,.05); }
 .gantt-month-label { font-weight: 600; display: block; }
-.gantt-month-year { font-size: 10px; opacity: .7; }
+.gantt-month-year { font-size:var(--text-2xs); opacity: .7; }
 
 .gantt-row {
   display: flex; border-bottom: 1px solid var(--border);
@@ -40,7 +40,7 @@
 .gantt-row-label {
   min-width: 240px; width: 240px; padding: 8px 16px;
   display: flex; align-items: center;
-  font-size: 13px; font-weight: 500;
+  font-size:var(--text-base); font-weight: 500;
   border-right: 1px solid var(--border); flex-shrink: 0;
   position: sticky; left: 0; z-index: 3; background: var(--surface);
 }
@@ -59,7 +59,7 @@
 
 .prest-bar {
   height: 28px; border-radius: 4px; display: flex; align-items: center;
-  padding: 0 8px; font-size: 11px; font-weight: 500; cursor: pointer;
+  padding: 0 8px; font-size:var(--text-xs); font-weight: 500; cursor: pointer;
   transition: filter .15s, transform .15s; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; border: 1px solid transparent;
   gap: 4px; min-width: 4px;
@@ -68,7 +68,7 @@
 
 .bar-en_cours    { background: var(--green-soft); border-color: var(--green); color: var(--green); }
 .bar-en_pause    { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
-.bar-terminee    { background: rgba(100,116,139,.15); border-color: #475569; color: #94a3b8; }
+.bar-terminee    { background: var(--neutral-soft); border-color: var(--neutral); color: var(--text-dim); }
 /* Barre spéculative (opportunité/candidature encore en attente, main.js pipelineItemFrom*()) —
    violet + pointillé, seul mécanisme "pas encore confirmé" restant côté Gantt. */
 .bar-pipeline    { background: var(--purple-soft); border-color: var(--purple); border-style: dashed; color: var(--purple); }
@@ -76,22 +76,25 @@
 .ext-bar {
   height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
   border-left: none; display: flex; align-items: center; padding: 0 6px;
-  font-size: 10px; font-weight: 600; opacity: .7; min-width: 4px;
+  font-size:var(--text-2xs); font-weight: 600; opacity: .7; min-width: 4px;
 }
 .ext-bar-en_cours    { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.06); }
 .ext-bar-en_pause    { border-color: var(--blue); color: var(--blue); background: rgba(59,130,246,.06); }
-.ext-bar-terminee    { border-color: #475569; color: #94a3b8; background: rgba(71,85,105,.08); }
+.ext-bar-terminee    { border-color: var(--neutral); color: var(--text-dim); background: rgba(71,85,105,.08); }
 
 .exit-bar {
   height: 28px; border-radius: 0 4px 4px 0; border: 1px dashed;
   border-left: none; display: flex; align-items: center; padding: 0 6px;
-  font-size: 10px; opacity: .35; min-width: 4px;
+  font-size:var(--text-2xs); opacity: .35; min-width: 4px;
   background: repeating-linear-gradient(90deg, transparent 0px, transparent 3px, rgba(100,116,139,.25) 3px, rgba(100,116,139,.25) 4px);
-  border-color: #475569; color: #94a3b8;
+  border-color: var(--neutral); color: var(--text-dim);
 }
 
+/* Forme distincte par statut, pas seulement la couleur (RGAA 3.1) : rond = en cours (référence),
+   carré arrondi = en pause, losange = terminée. Le pipeline garde un rond, déjà distingué du
+   reste par le bord pointillé de toute la barre (voir .bar-pipeline). */
 .bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .bar-en_cours .bar-dot    { background: var(--green); }
-.bar-en_pause .bar-dot    { background: var(--blue); }
-.bar-terminee .bar-dot    { background: #475569; }
+.bar-en_pause .bar-dot    { background: var(--blue); border-radius: 2px; }
+.bar-terminee .bar-dot    { background: var(--neutral); border-radius: 1px; transform: rotate(45deg); }
 .bar-pipeline .bar-dot    { background: var(--purple); }

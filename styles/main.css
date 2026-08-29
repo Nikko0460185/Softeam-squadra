@@ -1,3 +1,7 @@
+/* N'est plus chargé par index.html (qui liste désormais chaque fichier en <link>, récupérés
+   en parallèle plutôt qu'en cascade via @import — voir le commentaire dans index.html).
+   Conservé uniquement comme référence de l'ordre à respecter si un nouveau fichier CSS
+   est ajouté : le reproduire aussi dans la liste de <link> d'index.html. */
 @import './tokens.css';
 @import './layout.css';
 

@@ -22,8 +22,8 @@
 }
 .toggle-check.checked { background: var(--accent); border-color: var(--accent); }
 
-.toggle-label { font-size: 13px; font-weight: 500; flex: 1; }
-.toggle-badge { font-size: 11px; color: var(--text-muted); }
+.toggle-label { font-size:var(--text-base); font-weight: 500; flex: 1; }
+.toggle-badge { font-size:var(--text-xs); color: var(--text-muted); }
 
 .toggle-body { padding: 12px; border-top: 1px solid var(--border); background: var(--surface3); display: none; }
 .toggle-body.open { display: block; }

@@ -1,6 +1,6 @@
 .nav-item {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px;
-  border-radius: var(--radius); cursor: pointer; font-size: 14px;
+  border-radius: var(--radius); cursor: pointer; font-size:var(--text-md);
   color: var(--text-dim); transition: all .15s; margin-bottom: 2px;
 }
 .nav-item:hover { background: var(--surface2); color: var(--text); }

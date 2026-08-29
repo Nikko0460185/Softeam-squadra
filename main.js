@@ -272,6 +272,34 @@ function seedDemo() {
   save();
 }
 
+// ─── TAILLE DU TEXTE (espace utilisateur) ────────────────────────────────────
+// Change la taille de la racine <html> : tout le texte de l'app suit proportionnellement,
+// puisque tout est en rem (voir styles/tokens.css, --text-*) depuis l'audit accessibilité du
+// 2026-08-29. Persisté par navigateur (localStorage), pas par profil applicatif.
+const TEXT_SCALE_STEPS = [100, 112, 125, 140, 160]; // %
+let textScaleIndex = 0;
+
+function initTextScale() {
+  const stored = parseInt(localStorage.getItem('squadra_text_scale_index'));
+  textScaleIndex = (!isNaN(stored) && stored >= 0 && stored < TEXT_SCALE_STEPS.length) ? stored : 0;
+  applyTextScale();
+}
+function applyTextScale() {
+  const pct = TEXT_SCALE_STEPS[textScaleIndex];
+  document.documentElement.style.fontSize = pct + '%';
+  document.getElementById('text-scale-indicator').textContent = pct + '%';
+  document.getElementById('btn-text-scale-down').disabled = textScaleIndex === 0;
+  document.getElementById('btn-text-scale-up').disabled   = textScaleIndex === TEXT_SCALE_STEPS.length - 1;
+  localStorage.setItem('squadra_text_scale_index', textScaleIndex);
+}
+function increaseTextScale() {
+  if (textScaleIndex < TEXT_SCALE_STEPS.length - 1) { textScaleIndex++; applyTextScale(); }
+}
+function decreaseTextScale() {
+  if (textScaleIndex > 0) { textScaleIndex--; applyTextScale(); }
+}
+initTextScale();
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 load().then(() => {
   if (!S.consultants?.length) seedDemo();
@@ -312,11 +340,58 @@ function confirmProfile() {
   render();
 }
 
+// ─── SIDEBAR EN TIROIR (fenêtre étroite <900px) ─────────────────────────────
+// Sous 900px, la sidebar devient un tiroir superposé (voir styles/organisms/sidebar.css) et
+// regroupe aussi les 2 boutons "Ajouter..." de la topbar (déplacés ici, pas dupliqués : mêmes
+// éléments DOM relocalisés, pour garder onclick/id intacts et éviter toute désynchronisation).
+const mqNarrow = window.matchMedia('(max-width: 900px)');
+
+function relocateTopbarActions(e) {
+  const narrow = e ? e.matches : mqNarrow.matches;
+  const slot = document.getElementById('sidebar-actions');
+  const anchor = document.getElementById('topbar-actions');
+  const btnOpp = document.getElementById('btn-add-opportunite');
+  const btnPrest = document.getElementById('btn-add-prestation');
+  if (narrow) { slot.appendChild(btnOpp); slot.appendChild(btnPrest); }
+  else        { anchor.appendChild(btnOpp); anchor.appendChild(btnPrest); }
+}
+mqNarrow.addEventListener('change', relocateTopbarActions);
+relocateTopbarActions();
+
+function openSidebarDrawer() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-backdrop').classList.add('open');
+  document.getElementById('btn-sidebar-toggle').setAttribute('aria-expanded', 'true');
+}
+function closeSidebarDrawer() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('open');
+  document.getElementById('btn-sidebar-toggle').setAttribute('aria-expanded', 'false');
+}
+function toggleSidebarDrawer() {
+  document.getElementById('sidebar').classList.contains('open') ? closeSidebarDrawer() : openSidebarDrawer();
+}
+// Ferme le tiroir dès qu'une action est choisie dedans (navigation, filtre consultant,
+// "Ajouter...") — évite qu'il reste ouvert par-dessus le contenu après un choix.
+document.getElementById('sidebar').addEventListener('click', (e) => {
+  if (mqNarrow.matches && e.target.closest('button, .nav-item')) closeSidebarDrawer();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('sidebar').classList.contains('open')) closeSidebarDrawer();
+});
+
 function openProfileSwitcher() {
+  document.getElementById('user-menu').removeAttribute('open');
   const preselect = currentProfile?.type === 'manager' ? 'manager' : currentProfile?.id;
   populateProfileSelect(preselect);
   document.getElementById('profile-overlay').classList.add('open');
 }
+
+// Ferme le menu utilisateur (barre du haut) au clic en dehors — <details> ne le fait pas nativement.
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('user-menu');
+  if (menu?.open && !menu.contains(e.target)) menu.removeAttribute('open');
+});
 
 // ─── RENDER DISPATCHER ───────────────────────────────────────────────────────
 function render() {
@@ -657,27 +732,68 @@ function renderList() {
 // forme, pour tenir dans UNE seule chronologie (Statut/Type/Client/Dates/TJM/Activité) —
 // c'est ce qui permet de comparer d'un coup d'œil ce qui est en pipeline vs confirmé,
 // au lieu de deux tableaux au format différent.
-function prestationToRow(p) {
+// Historique complet d'un type de modification de fin de mission ("1re prolongation au ...,
+// 2e au ..."), pour l'infobulle de la ligne — la ligne elle-même n'affiche que la dernière
+// (lastEndEvent()), jamais tout l'historique en clair (prendrait trop de place).
+const ORDINALS = ['1re','2e','3e','4e','5e','6e','7e','8e','9e','10e'];
+function missionEndHistoryText(p, type) {
+  const events = (p.missionEvents || []).filter(e => e.type === type);
+  if (events.length <= 1) return '';
+  const label = type === 'prolongation' ? 'prolongation' : 'sortie anticipée';
+  return events.map((e,i) => `${ORDINALS[i] || (i+1)+'e'} ${label} au ${fmtD(e.date)}`).join(', ');
+}
+
+function prestationToRow(p, viewMode) {
   const tjmCur = currentTjm(p);
   const hasRevision = p.tjmRevisions?.length > 0;
-  let modifiers = '';
-  const endEvt = lastEndEvent(p);
-  if (endEvt?.type === 'prolongation')
-    modifiers += `<div class="ext-label">↗ Prolongé → ${fmtD(endEvt.date)}</div>`;
-  if (endEvt?.type === 'sortie_anticipee')
-    modifiers += `<div class="exit-label">↙ Sortie anticipée → ${fmtD(endEvt.date)}</div>`;
+
+  // Pause et origine restent à côté du service (colonne large) ; prolongation/sortie anticipée
+  // restent avec les dates, dont elles redéfinissent la fin (voir dateLine plus bas).
+  const modifiers = [];
   const pause = activePause(p, todayStr());
   if (pause)
-    modifiers += `<div class="exit-label">⏸ En pause${pause.resumeDate ? ` → reprise ${fmtD(pause.resumeDate)}` : ''}</div>`;
+    modifiers.push(`<span class="exit-label">⏸ En pause${pause.resumeDate ? ` → reprise ${fmtD(pause.resumeDate)}` : ''}</span>`);
+
+  const endEvt = lastEndEvent(p);
+  let dateLine = `${fmtD(p.startDate)} → ${fmtD(p.endDate)}`;
+  if (endEvt?.type === 'prolongation' || endEvt?.type === 'sortie_anticipee') {
+    const cls   = endEvt.type === 'prolongation' ? 'ext-label' : 'exit-label';
+    const arrow = endEvt.type === 'prolongation' ? '↗ Prolongé' : '↙ Sortie anticipée';
+    const hist  = missionEndHistoryText(p, endEvt.type);
+    dateLine   += `<div class="${cls}"${hist ? ` title="${hist}"` : ''}>${arrow} → ${fmtD(endEvt.date)}</div>`;
+  }
+
   const status = prestationStatus(p);
+
+  // Alerte fin de mission proche (< 3 mois) — même seuil et code couleur que le widget
+  // "Événements à venir" des Statistiques (buildEventsDiv()) : rouge sous 30 jours, orange au-delà.
+  let alertLine = '';
+  if (status === 'en_cours') {
+    const daysToEnd = Math.round((new Date(effectiveEnd(p)+'T00:00:00') - new Date(todayStr()+'T00:00:00')) / 86400000);
+    if (daysToEnd >= 0 && daysToEnd <= 90) {
+      const color = daysToEnd <= 30 ? 'var(--red)' : 'var(--orange)';
+      alertLine = `<span title="Fin de mission dans ${daysToEnd} j (${fmtD(effectiveEnd(p))})" style="color:${color}">⚠</span>`;
+    }
+  }
+
+  // Vue Client : la carte regroupe déjà par client — l'info qui varie ligne à ligne est le
+  // consultant staffé (absente avant ce correctif, cf. opportuniteToRow() qui a toujours fait
+  // ça correctement avec le titre du besoin). Vue Consultant : inverse, comportement historique
+  // inchangé (la carte regroupe par consultant, l'info qui varie est le client).
+  const consultant = S.consultants.find(c => c.id === p.consultantId);
+  const clientLine = viewMode === 'clients' ? (consultant ? consultant.name : 'Consultant supprimé') : p.client;
+
   return {
     sortDate: p.startDate,
     statusClass: `pill-${status}`, statusLabel: statusLabel(status),
     typeClass: `nature-${p.nature||'mission'}`, typeLabel: natureLabel(p.nature),
-    clientLine: p.client, subLine: p.clientService || '',
-    dateLine: `${fmtD(p.startDate)} → ${fmtD(p.endDate)}${modifiers}`,
+    profilLine: p.titre || '',
+    clientLine,
+    subLine: [p.clientService, ...modifiers].filter(Boolean).join(' · '),
+    dateLine,
     valueLine: `${tjmCur.toLocaleString('fr-FR')} €/j${hasRevision?`<small>base: ${p.tjm.toLocaleString('fr-FR')} €</small>`:''}`,
     activiteLine: `${(p.fte||5)}/5`,
+    alertLine,
     onClick: `openPrestModal(S.prestations.find(x=>x.id==='${p.id}'))`,
   };
 }
@@ -698,18 +814,25 @@ function opportuniteToRow(opp, cands) {
         const cons = S.consultants.find(x => x.id === c.consultantId);
         const color = c.status==='gagnee' ? 'var(--green)' : c.status==='perdue' ? 'var(--red)' : 'var(--text-dim)';
         const strike = c.status==='perdue' ? 'text-decoration:line-through;' : '';
-        return `<span style="color:${color};${strike}">${cons ? cons.name : 'Consultant supprimé'}</span>`;
+        // Gagnée/perdue ne se distinguent pas que par la couleur (RGAA 3.1) : le ✓ et le barré
+        // restent visibles même sans percevoir le vert/rouge.
+        const prefix = c.status==='gagnee' ? '✓ ' : '';
+        return `<span style="color:${color};${strike}">${prefix}${cons ? cons.name : 'Consultant supprimé'}</span>`;
       }).join(', ')
     : `<span style="color:var(--text-muted)">Aucun candidat</span>`;
   const { sortDate, dateLine } = oppDateInfo(opp);
   return {
     sortDate,
     statusClass: `pill-opp-${opp.status}`, statusLabel: opportuniteStatusLabel(opp.status),
-    typeClass: 'nature-opportunite', typeLabel: 'Opportunité',
-    clientLine: opp.titre || 'Opportunité',
-    subLine: `${opp.clientService ? opp.clientService+' · ' : ''}${candNames}`,
+    typeClass: 'nature-opportunite', typeLabel: 'Opportunité', originLine: '',
+    profilLine: opp.titre || '',
+    // "Qui" = les candidats (pas encore un consultant confirmé) — même principe que la
+    // prestation en Vue Clients : la carte regroupe déjà par client, l'info qui varie ligne à
+    // ligne est le(s) candidat(s), pas le titre du besoin (désormais dans profilLine).
+    clientLine: candNames,
+    subLine: opp.clientService || '',
     dateLine,
-    valueLine: '—', activiteLine: '—',
+    valueLine: '—', activiteLine: '—', alertLine: '',
     onClick: `openOpportuniteModal(S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
@@ -721,26 +844,35 @@ function candidatureToRow(cand) {
   if (!opp) return null;
   return {
     statusClass: `pill-cand-${cand.status}`, statusLabel: candidatureStatusLabel(cand.status),
-    typeClass: 'nature-opportunite', typeLabel: 'Opportunité',
+    typeClass: 'nature-opportunite', typeLabel: 'Opportunité', originLine: '',
+    profilLine: opp.titre || '',
     clientLine: opp.client,
-    subLine: `${opp.titre || ''}${opp.clientService ? ' · '+opp.clientService : ''}`,
+    subLine: opp.clientService || '',
     ...oppDateInfo(opp),
-    valueLine: '—', activiteLine: '—',
+    valueLine: '—', activiteLine: '—', alertLine: '',
     onClick: `openOpportuniteModal(S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
 
-function buildUnifiedTableHtml(items) {
+// whoHeader : libellé de la colonne "qui" — "Consultant" en Vue Clients (la carte regroupe déjà
+// par client), "Client / Service" en Vue Consultants (la carte regroupe déjà par consultant).
+function buildUnifiedTableHtml(items, whoHeader) {
   if (!items.length) return '';
-  const header = `<div class="prest-header-row" style="grid-template-columns:110px 110px 1fr 190px 90px 70px 36px"><span>Statut</span><span>Type</span><span>Client / Service</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span></div>`;
+  const cols = '100px 130px 130px 1fr 190px 90px 70px 26px 36px';
+  const header = `<div class="prest-header-row" style="grid-template-columns:${cols}"><span>Statut</span><span>Type</span><span>Profil</span><span>${whoHeader}</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span><span></span></div>`;
   const rows = items.slice().sort((a,b) => b.sortDate.localeCompare(a.sortDate)).map(it => `
-    <div class="prest-row" style="grid-template-columns:110px 110px 1fr 190px 90px 70px 36px">
+    <div class="prest-row" style="grid-template-columns:${cols}">
       <span class="status-pill ${it.statusClass}">${it.statusLabel}</span>
-      <span class="nature-badge ${it.typeClass}">${it.typeLabel}</span>
+      <div>
+        <span class="nature-badge ${it.typeClass}">${it.typeLabel}</span>
+        ${it.originLine||''}
+      </div>
+      <div class="prest-profil">${it.profilLine||'<span style="color:var(--text-muted)">—</span>'}</div>
       <div class="prest-client">${it.clientLine}<small>${it.subLine||''}</small></div>
       <div class="prest-dates">${it.dateLine}</div>
       <div class="prest-tjm">${it.valueLine}</div>
-      <div style="font-size:13px;font-weight:600;color:var(--text-dim);text-align:right">${it.activiteLine}</div>
+      <div style="font-size:var(--text-base);font-weight:600;color:var(--text-dim);text-align:right">${it.activiteLine}</div>
+      <div style="text-align:center;font-size:var(--text-base)">${it.alertLine||''}</div>
       <button class="btn-icon" onclick="${it.onClick}" title="Modifier">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>
@@ -757,25 +889,28 @@ function renderListConsultants() {
   cons.forEach(c => {
     const color = consColor(c.id);
     const items = [
-      ...S.prestations.filter(p => p.consultantId === c.id && matchStatusAndType('prestation', prestationStatus(p))).map(prestationToRow),
-      ...S.candidatures.filter(cd => cd.consultantId === c.id && matchStatusAndType('candidature', cd.status)).map(candidatureToRow).filter(Boolean),
+      ...S.prestations.filter(p => p.consultantId === c.id && matchStatusAndType('prestation', prestationStatus(p))).map(p => prestationToRow(p, 'consultants')),
+      // Une candidature gagnée a déjà sa continuité portée par la prestation qui en est issue
+      // (repère "🔗 Issue d'une opportunité", voir prestationToRow()) — pas besoin d'une 2e ligne
+      // pour la même histoire.
+      ...S.candidatures.filter(cd => cd.consultantId === c.id && cd.status !== 'gagnee' && matchStatusAndType('candidature', cd.status)).map(candidatureToRow).filter(Boolean),
     ];
 
     const card = document.createElement('div');
     card.className = 'list-card';
 
     const rows = items.length
-      ? buildUnifiedTableHtml(items)
-      : `<div style="padding:14px 16px;font-size:13px;color:var(--text-muted)">Aucune prestation ni opportunité${(filterStatus!=='all'||filterType!=='all')?' pour ce filtre':''}</div>`;
+      ? buildUnifiedTableHtml(items, 'Client / Service')
+      : `<div style="padding:14px 16px;font-size:var(--text-base);color:var(--text-muted)">Aucune prestation ni opportunité${(filterStatus!=='all'||filterType!=='all')?' pour ce filtre':''}</div>`;
 
     card.innerHTML = `
       <div class="list-card-header">
         <div class="avatar" style="background:${color}22;color:${color}">${initials(c.name)}</div>
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:600">${c.name}</div>
-          <div style="font-size:12px;color:var(--text-muted)">${c.role||''}</div>
+          <div style="font-size:var(--text-md);font-weight:600">${c.name}</div>
+          <div style="font-size:var(--text-sm);color:var(--text-muted)">${c.role||''}</div>
         </div>
-        <button class="btn-primary" style="padding:5px 10px;font-size:12px" onclick="openPrestModal(null,'${c.id}')">+ Prestation</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:var(--text-sm)" onclick="openPrestModal(null,'${c.id}')">+ Prestation</button>
       </div>
       <div class="list-card-body">${rows}</div>`;
     el.appendChild(card);
@@ -801,33 +936,36 @@ function renderListClients() {
   ])].sort((a,b) => a.localeCompare(b));
 
   if (!clients.length) {
-    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucun client${filterCons?' pour ce consultant':''}</div>`;
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucun client${filterCons?' pour ce consultant':''}</div>`;
     return;
   }
 
   clients.forEach(client => {
-    const clientOpps = opps.filter(o => o.client === client && matchStatusAndType('opportunite', o.status));
+    // Une opportunité "Gagnée" (o.status === 'pourvu') a déjà sa continuité portée par la
+    // prestation qui en est issue (repère "🔗 Issue d'une opportunité", voir prestationToRow()) —
+    // pas besoin d'une 2e ligne pour la même histoire.
+    const clientOpps = opps.filter(o => o.client === client && o.status !== 'pourvu' && matchStatusAndType('opportunite', o.status));
     const clientPrests = S.prestations
       .filter(p => p.client === client && (!filterCons || p.consultantId === filterCons) && matchStatusAndType('prestation', prestationStatus(p)));
     const items = [
       ...clientOpps.map(opp => opportuniteToRow(opp, S.candidatures.filter(c => c.opportuniteId === opp.id))),
-      ...clientPrests.map(prestationToRow),
+      ...clientPrests.map(p => prestationToRow(p, 'clients')),
     ];
 
     const card = document.createElement('div');
     card.className = 'list-card';
 
     const body = items.length
-      ? buildUnifiedTableHtml(items)
-      : `<div style="padding:14px 16px;font-size:13px;color:var(--text-muted)">Aucune opportunité ni mission</div>`;
+      ? buildUnifiedTableHtml(items, 'Consultant')
+      : `<div style="padding:14px 16px;font-size:var(--text-base);color:var(--text-muted)">Aucune opportunité ni mission</div>`;
 
     card.innerHTML = `
       <div class="list-card-header">
         <div class="avatar" style="background:var(--surface2);color:var(--text-dim)">${initials(client)}</div>
         <div style="flex:1">
-          <div style="font-size:14px;font-weight:600">${client}</div>
+          <div style="font-size:var(--text-md);font-weight:600">${client}</div>
         </div>
-        <button class="btn-primary" style="padding:5px 10px;font-size:12px" onclick="openOpportuniteModal(null,'${client}')">+ Opportunité</button>
+        <button class="btn-primary" style="padding:5px 10px;font-size:var(--text-sm)" onclick="openOpportuniteModal(null,'${client}')">+ Opportunité</button>
       </div>
       <div class="list-card-body">${body}</div>`;
     el.appendChild(card);
@@ -861,8 +999,8 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
     const msg = ok
       ? '<strong style="color:var(--green)">Objectif tarif dépassé</strong> · CA confirmé supérieur de ' + ecartPct + '% (' + Math.round(ecart).toLocaleString('fr-FR') + ' €) au tarif cible — marge 32% couverte.'
       : '<strong style="color:var(--orange)">Ecart vs objectif : ' + Math.round(-ecart).toLocaleString('fr-FR') + ' €</strong> (−' + ecartPct + '%) · En-dessous du tarif cible. Remonter les TJM ou signer le pipeline.';
-    alertHtml = '<div style="background:' + bg + ';border:1px solid ' + color + ';border-radius:var(--radius);padding:10px 14px;margin-bottom:20px;font-size:12px;display:flex;align-items:center;gap:10px">'
-      + '<span style="font-size:18px;flex-shrink:0">' + (ok ? '✓' : '→') + '</span>'
+    alertHtml = '<div style="background:' + bg + ';border:1px solid ' + color + ';border-radius:var(--radius);padding:10px 14px;margin-bottom:20px;font-size:var(--text-sm);display:flex;align-items:center;gap:10px">'
+      + '<span style="font-size:var(--text-xl);flex-shrink:0">' + (ok ? '✓' : '→') + '</span>'
       + '<span>' + msg + '</span></div>';
     caStatusPill = statusPill((ok ? '✓ Objectif atteint +' : 'Sous objectif −') + ecartPct + '%', color, bg);
   } else {
@@ -881,25 +1019,25 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
   const margeTrendBadge = kd.margePctVal === null ? '' : trendBadge(kd.margePctVal, prevKd.margePctVal);
 
   // Palette validée pour un fond sombre (script d'accessibilité de la skill dataviz : bande de
-  // clarté, séparation daltonisme ΔE, contraste — tout passe sur le fond #1a1d27 de l'app).
+  // clarté, séparation daltonisme ΔE, contraste — tout passe sur le fond var(--surface) de l'app).
   // L'ordre des couleurs fait partie de la garantie d'accessibilité : ne pas le changer.
   // Chaque courbe a aussi un pointillé et une forme de repère propres, pour rester
   // distinguable même sans percevoir la couleur.
   // Graphique 1 "CA & Pipeline" : où on en est vs l'objectif commercial. Le pipeline vient
   // maintenant du vrai S.opportunites (TJM/dates optionnels saisis dès l'Opportunité).
   const caDefs = [
-    { key: 'caPipeline', label: 'CA en négociation',         color: '#3987e5', dash: '0',        shape: 'circle',      always: true },
-    { key: 'ca',         label: 'CA Confirmé',               color: '#199e70', dash: '2,3',       shape: 'diamond',     always: true },
-    { key: 'caTotal',    label: 'CA Total prévisionnel',     color: '#c98500', dash: '9,3,2,3',   shape: 'triangle',    always: true },
-    { key: 'caCible',    label: 'Objectif CA (Tarif Cible)', color: '#d55181', dash: '1,4',       shape: 'triangleDown', always: false },
+    { key: 'caPipeline', label: 'CA en négociation',         color: 'var(--chart-ca-pipeline)', dash: '0',        shape: 'circle',      always: true },
+    { key: 'ca',         label: 'CA Confirmé',               color: 'var(--chart-ca-confirme)', dash: '2,3',       shape: 'diamond',     always: true },
+    { key: 'caTotal',    label: 'CA Total prévisionnel',     color: 'var(--chart-ca-total)', dash: '9,3,2,3',   shape: 'triangle',    always: true },
+    { key: 'caCible',    label: 'Objectif CA (Tarif Cible)', color: 'var(--chart-objectif)', dash: '1,4',       shape: 'triangleDown', always: false },
   ];
   // Graphique 2 "Marge & Rentabilité" : est-on rentable. Le CA Confirmé y est repris en repère
   // discret (même label, donc même bouton de légende que dans le graphique 1) pour donner du
   // sens à la masse salariale / marge brute sans dupliquer tout le pipeline commercial.
   const margeDefs = [
-    { key: 'masseSalariale', label: 'Masse salariale', color: '#d95926', dash: '7,3',     shape: 'square', always: false },
-    { key: 'margeVal',       label: 'Marge brute',     color: '#008300', dash: '6,2,1,2', shape: 'cross',  always: false },
-    { key: 'ca',             label: 'CA Confirmé',     color: '#199e70', dash: '2,3',     shape: 'diamond', always: true, reference: true },
+    { key: 'masseSalariale', label: 'Masse salariale', color: 'var(--chart-masse-salariale)', dash: '7,3',     shape: 'square', always: false },
+    { key: 'margeVal',       label: 'Marge brute',     color: 'var(--chart-marge)', dash: '6,2,1,2', shape: 'cross',  always: false },
+    { key: 'ca',             label: 'CA Confirmé',     color: 'var(--chart-ca-confirme)', dash: '2,3',     shape: 'diamond', always: true, reference: true },
   ];
   function toSeries(def) {
     return { label: def.label, color: def.color, dash: def.dash, shape: def.shape, reference: def.reference, values: chartMonths.map(m => m.d[def.key]) };
@@ -921,9 +1059,9 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
 
   const div = document.createElement('div');
   div.innerHTML = `
-    <div class="section-title" style="margin-bottom:10px;padding-top:4px">
+    <h3 class="section-title" style="margin-bottom:10px;padding-top:4px">
       Activité · ${kpiLabel} · base ${kpiWorkDays} j/trimestre
-    </div>
+    </h3>
     <div class="stats-grid" style="margin-bottom:20px">
       <div class="stat-card">
         <div class="stat-label-row"><span class="stat-label">Consultants en mission</span>${trendBadge(kd.missions.length, prevKd.missions.length)}</div>
@@ -950,9 +1088,9 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-      <div class="section-title">
+      <h3 class="section-title">
         Chiffre d'affaires & Marge · ${chartRangeLabel}
-      </div>
+      </h3>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <div style="display:flex;gap:6px">
           <button class="period-tab ${chartMode==='1y'?'active':''}" onclick="setChartMode('1y')">1 an</button>
@@ -961,9 +1099,9 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
         </div>
         ${chartMode==='1y' ? `
         <div style="display:flex;align-items:center;gap:4px">
-          <button class="btn-icon" style="font-size:14px;font-weight:700" onclick="navChartYear(-1)" title="Année précédente">‹</button>
-          <span style="font-size:12px;font-weight:600;min-width:36px;text-align:center">${chartYear}</span>
-          <button class="btn-icon" style="font-size:14px;font-weight:700" onclick="navChartYear(1)" title="Année suivante">›</button>
+          <button class="btn-icon" style="font-size:var(--text-md);font-weight:700" onclick="navChartYear(-1)" title="Année précédente" aria-label="Année précédente">‹</button>
+          <span style="font-size:var(--text-sm);font-weight:600;min-width:36px;text-align:center">${chartYear}</span>
+          <button class="btn-icon" style="font-size:var(--text-md);font-weight:700" onclick="navChartYear(1)" title="Année suivante" aria-label="Année suivante">›</button>
         </div>` : ''}
       </div>
     </div>
@@ -996,7 +1134,7 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
 
 function buildOccTable(pData, cons, isCurPeriod, consOcc, occClass) {
   const thCells = pData.map(pd =>
-    '<th class="' + (isCurPeriod(pd)?'occ-cur':'') + '" title="' + pd.label + '">' + pd.short + '</th>'
+    '<th scope="col" class="' + (isCurPeriod(pd)?'occ-cur':'') + '" title="' + pd.label + '">' + pd.short + '</th>'
   ).join('');
 
   const bodyRows = cons.map(c => {
@@ -1010,7 +1148,7 @@ function buildOccTable(pData, cons, isCurPeriod, consOcc, occClass) {
     }).join('');
     return '<tr>'
       + '<td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:8px">'
-      + '<div class="avatar" style="width:22px;height:22px;font-size:9px;background:' + color + '22;color:' + color + ';flex-shrink:0">' + initials(c.name) + '</div>'
+      + '<div class="avatar" style="width:22px;height:22px;font-size:var(--text-2xs);background:' + color + '22;color:' + color + ';flex-shrink:0">' + initials(c.name) + '</div>'
       + '<span>' + c.name + '</span></div></td>'
       + '<td style="text-align:right;color:var(--orange)">' + (cc ? cc.toLocaleString('fr-FR')+' €' : '—') + '</td>'
       + '<td style="text-align:right;color:var(--purple);font-weight:600">' + (tc ? tc.toLocaleString('fr-FR')+' €' : '—') + '</td>'
@@ -1054,7 +1192,7 @@ function buildOccTable(pData, cons, isCurPeriod, consOcc, occClass) {
     </div>
     <div style="overflow-x:auto">
       <table class="occ-table">
-        <thead><tr><th>Consultant</th><th style="text-align:right;color:var(--orange)">CC (€/j)</th><th style="text-align:right;color:var(--purple)">TC (€/j)</th>${thCells}</tr></thead>
+        <thead><tr><th scope="col">Consultant</th><th scope="col" style="text-align:right;color:var(--orange)">CC (€/j)</th><th scope="col" style="text-align:right;color:var(--purple)">TC (€/j)</th>${thCells}</tr></thead>
         <tbody>${bodyRows}</tbody>
         <tfoot>${footRows}</tfoot>
       </table>
@@ -1071,11 +1209,11 @@ function buildFinTable(pData, wLabel, wPeriod, isCurPeriod) {
       const col = typeof color === 'function' ? color(v) : color;
       return '<td class="' + (isCurPeriod(pData[i])?'occ-cur':'') + '" style="text-align:right;color:' + col + '">' + (v != null ? fmt(v) : '—') + '</td>';
     }).join('');
-    return '<tr><td style="font-size:12px;white-space:nowrap;color:var(--text-dim)">' + label + '</td>' + cells + '</tr>';
+    return '<tr><td style="font-size:var(--text-sm);white-space:nowrap;color:var(--text-dim)">' + label + '</td>' + cells + '</tr>';
   }
 
   const thCells = pData.map(pd =>
-    '<th class="' + (isCurPeriod(pd)?'occ-cur':'') + '" style="text-align:right" title="' + pd.label + '">' + pd.short + '</th>'
+    '<th scope="col" class="' + (isCurPeriod(pd)?'occ-cur':'') + '" style="text-align:right" title="' + pd.label + '">' + pd.short + '</th>'
   ).join('');
 
   const msRows = pData.some(pd => pd.d.masseSalariale > 0) ? [
@@ -1096,11 +1234,11 @@ function buildFinTable(pData, wLabel, wPeriod, isCurPeriod) {
   div.className = 'chart-container';
   div.innerHTML = `
     <div class="chart-title">Suivi financier par période
-      <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:11px">· base ${wLabel} j ouvrés/${wPeriod} (218 j/an)</span>
+      <span style="font-weight:400;color:var(--text-muted);margin-left:8px;font-size:var(--text-xs)">· base ${wLabel} j ouvrés/${wPeriod} (218 j/an)</span>
     </div>
     <div style="overflow-x:auto">
       <table class="occ-table">
-        <thead><tr><th style="min-width:200px">Indicateur</th>${thCells}</tr></thead>
+        <thead><tr><th scope="col" style="min-width:200px">Indicateur</th>${thCells}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -1132,7 +1270,7 @@ function buildClientTable(curPD, cons, workDays) {
     const natures   = [...new Set(cl.missions.map(p=>natureBadge(p.nature)))].join(' ');
     const consNames = [...cl.consultants].map(id => {
       const c = S.consultants.find(x=>x.id===id);
-      return c ? '<span style="background:'+consColor(id)+'22;color:'+consColor(id)+';padding:1px 6px;border-radius:10px;font-size:10px">'+initials(c.name)+'</span>' : '';
+      return c ? '<span style="background:'+consColor(id)+'22;color:'+consColor(id)+';padding:1px 6px;border-radius:10px;font-size:var(--text-2xs)">'+initials(c.name)+'</span>' : '';
     }).join(' ');
     return '<tr>'
       + '<td><strong>' + cl.client + '</strong></td>'
@@ -1150,11 +1288,11 @@ function buildClientTable(curPD, cons, workDays) {
   div.innerHTML = '<div class="chart-title">Répartition par client · ' + curPD.label + '</div>'
     + (clientRows.length
       ? '<div style="overflow-x:auto"><table class="client-table"><thead><tr>'
-        + '<th>Client</th><th>Consultants</th><th style="text-align:center">Missions</th>'
-        + '<th style="text-align:center">FTE</th><th>Nature</th>'
-        + '<th style="text-align:right">TJM moy.</th><th style="text-align:right">CA estimé</th>'
+        + '<th scope="col">Client</th><th scope="col">Consultants</th><th scope="col" style="text-align:center">Missions</th>'
+        + '<th scope="col" style="text-align:center">FTE</th><th scope="col">Nature</th>'
+        + '<th scope="col" style="text-align:right">TJM moy.</th><th scope="col" style="text-align:right">CA estimé</th>'
         + '</tr></thead><tbody>' + tableRows + '</tbody></table></div>'
-      : '<div style="color:var(--text-muted);font-size:13px;padding:4px 0">Aucune mission active sur cette période</div>');
+      : '<div style="color:var(--text-muted);font-size:var(--text-base);padding:4px 0">Aucune mission active sur cette période</div>');
   return div;
 }
 
@@ -1186,11 +1324,11 @@ function buildEventsDiv(cons, today) {
     evHtml += '<div class="event-row">'
       + '<div class="event-dot" style="background:' + col + '"></div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:13px;font-weight:500">' + (c?.name||'') + ' — ' + p.client + (p.clientService ? ' / '+p.clientService : '') + '</div>'
-      + '<div style="font-size:11px;color:var(--text-muted)">Fin' + tag + ' : ' + fmtD(effectiveEnd(p)) + ' · ' + (p.fte||5) + '/5 · ' + currentTjm(p).toLocaleString('fr-FR') + ' €/j</div>'
+      + '<div style="font-size:var(--text-base);font-weight:500">' + (c?.name||'') + ' — ' + p.client + (p.clientService ? ' / '+p.clientService : '') + '</div>'
+      + '<div style="font-size:var(--text-xs);color:var(--text-muted)">Fin' + tag + ' : ' + fmtD(effectiveEnd(p)) + ' · ' + (p.fte||5) + '/5 · ' + currentTjm(p).toLocaleString('fr-FR') + ' €/j</div>'
       + '</div>'
       + '<span class="event-days" style="color:' + col + '">' + days + 'j</span>'
-      + '<span class="status-pill pill-en_cours" style="font-size:10px">Fin proche</span>'
+      + '<span class="status-pill pill-en_cours" style="font-size:var(--text-2xs)">Fin proche</span>'
       + '</div>';
   });
 
@@ -1199,10 +1337,10 @@ function buildEventsDiv(cons, today) {
     evHtml += '<div class="event-row" style="cursor:pointer" onclick="openOpportuniteModal(S.opportunites.find(x=>x.id===\'' + o.id + '\'))">'
       + '<div class="event-dot" style="background:var(--purple)"></div>'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:13px;font-weight:500">' + o.client + (o.clientService ? ' / '+o.clientService : '') + (o.titre ? ' — '+o.titre : '') + '</div>'
-      + '<div style="font-size:11px;color:var(--text-muted)">Démarrage prévu : ' + fmtD(o.startDate) + (natureTxt ? ' · '+natureTxt : '') + '</div>'
+      + '<div style="font-size:var(--text-base);font-weight:500">' + o.client + (o.clientService ? ' / '+o.clientService : '') + (o.titre ? ' — '+o.titre : '') + '</div>'
+      + '<div style="font-size:var(--text-xs);color:var(--text-muted)">Démarrage prévu : ' + fmtD(o.startDate) + (natureTxt ? ' · '+natureTxt : '') + '</div>'
       + '</div>'
-      + '<span class="status-pill pill-opp-ouvert" style="font-size:10px">Ouvert</span>'
+      + '<span class="status-pill pill-opp-ouvert" style="font-size:var(--text-2xs)">Ouvert</span>'
       + '</div>';
   });
 
@@ -1210,7 +1348,7 @@ function buildEventsDiv(cons, today) {
   div.className = 'chart-container';
   div.style.marginBottom = '20px';
   div.innerHTML = '<div class="chart-title">Prochaines échéances — 90 jours</div>'
-    + (evHtml || '<div style="color:var(--text-muted);font-size:13px;padding:4px 0">Aucune échéance dans les 90 prochains jours</div>');
+    + (evHtml || '<div style="color:var(--text-muted);font-size:var(--text-base);padding:4px 0">Aucune échéance dans les 90 prochains jours</div>');
   return div;
 }
 
@@ -1446,9 +1584,9 @@ function renderStats() {
   caDiv.className = 'chart-container';
   caDiv.innerHTML = '<div class="chart-title">Évolution du Chiffre d\'Affaires'
     + '<span style="font-weight:400;margin-left:12px">'
-    + '<span style="color:#22c55e">▮ CA Confirmé (€)</span>&nbsp;&nbsp;'
-    + '<span style="color:#38bdf8">▮ CA Pipeline (€)</span>'
-    + (pData.some(pd=>pd.d.masseSalariale>0) ? '&nbsp;&nbsp;<span style="color:#f97316">── Masse salariale</span>' : '')
+    + '<span style="color:var(--green)">▮ CA Confirmé (€)</span>&nbsp;&nbsp;'
+    + '<span style="color:var(--blue)">▮ CA Pipeline (€)</span>'
+    + (pData.some(pd=>pd.d.masseSalariale>0) ? '&nbsp;&nbsp;<span style="color:var(--orange)">── Masse salariale</span>' : '')
     + '</span></div>';
   const caEl = document.createElement('div');
   buildCaChart(caEl, pData);
@@ -1459,8 +1597,8 @@ function renderStats() {
   comboDiv.className = 'chart-container';
   comboDiv.innerHTML = '<div class="chart-title">Évolution du Tarif Journalier Moyen & Taux d\'occupation'
     + '<span style="font-weight:400;margin-left:12px">'
-    + '<span style="color:#4f6ef7">── TJM (€/j, axe gauche)</span>&nbsp;&nbsp;'
-    + '<span style="color:#22c55e">▮ Occupation (%, axe droit)</span>'
+    + '<span style="color:var(--accent)">── TJM (€/j, axe gauche)</span>&nbsp;&nbsp;'
+    + '<span style="color:var(--green)">▮ Occupation (%, axe droit)</span>'
     + '</span></div>';
   const comboEl = document.createElement('div');
   buildDualChart(comboEl, pData, pData.map(pd=>pd.d.avgTjm), pData.map(pd=>pd.d.occRate||null));
@@ -1508,7 +1646,7 @@ function drawMarker(NS, svg, shape, cx, cy, r, color, opacity) {
     el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r);
   }
   el.setAttribute('fill', color);
-  el.setAttribute('stroke', '#1a1d27'); el.setAttribute('stroke-width', '1.3');
+  el.setAttribute('stroke', 'var(--surface)'); el.setAttribute('stroke-width', '1.3');
   if (opacity !== undefined) el.setAttribute('fill-opacity', opacity);
   svg.appendChild(el);
   return el;
@@ -1522,7 +1660,7 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
   const container = document.createElement('div');
   const validSeries = series.filter(s => s.values.some(v => v !== null && v !== undefined));
   if (!validSeries.length) {
-    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucune donnée sur cette période</div>`;
     return container;
   }
   const shownSeries = validSeries.filter(s => !hiddenChartSeries.has(s.label));
@@ -1563,12 +1701,12 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
     const line = document.createElementNS(NS, 'line');
     line.setAttribute('x1', PAD.left); line.setAttribute('x2', W - PAD.right);
     line.setAttribute('y1', y.toFixed(1)); line.setAttribute('y2', y.toFixed(1));
-    line.setAttribute('stroke', '#2e3250'); line.setAttribute('stroke-width', '0.8');
+    line.setAttribute('stroke', 'var(--border)'); line.setAttribute('stroke-width', '0.8');
     svg.appendChild(line);
     const label = document.createElementNS(NS, 'text');
     label.setAttribute('x', PAD.left - 6); label.setAttribute('y', y.toFixed(1));
     label.setAttribute('text-anchor', 'end'); label.setAttribute('dominant-baseline', 'middle');
-    label.setAttribute('font-size', '9'); label.setAttribute('fill', '#64748b');
+    label.setAttribute('font-size', '9'); label.setAttribute('fill', 'var(--text-muted)');
     label.textContent = fmtK(v);
     svg.appendChild(label);
   }
@@ -1576,7 +1714,7 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
     const zl = document.createElementNS(NS, 'line');
     zl.setAttribute('x1', PAD.left); zl.setAttribute('x2', W - PAD.right);
     zl.setAttribute('y1', zeroY.toFixed(1)); zl.setAttribute('y2', zeroY.toFixed(1));
-    zl.setAttribute('stroke', '#475569'); zl.setAttribute('stroke-width', '1');
+    zl.setAttribute('stroke', 'var(--neutral)'); zl.setAttribute('stroke-width', '1');
     svg.appendChild(zl);
   }
 
@@ -1589,7 +1727,7 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
     xLabel.setAttribute('text-anchor', 'middle');
     xLabel.setAttribute('font-size', '9');
     xLabel.setAttribute('font-weight', isFocus ? '700' : '400');
-    xLabel.setAttribute('fill', isFocus ? 'var(--accent)' : '#64748b');
+    xLabel.setAttribute('fill', isFocus ? 'var(--accent)' : 'var(--text-muted)');
     xLabel.textContent = m.short;
     xLabel.style.cursor = 'pointer';
     xLabel.addEventListener('click', () => { chartFocusIdx = i; renderStats(); });
@@ -1636,18 +1774,18 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
   const axis = document.createElementNS(NS, 'line');
   axis.setAttribute('x1', PAD.left); axis.setAttribute('x2', PAD.left);
   axis.setAttribute('y1', PAD.top); axis.setAttribute('y2', H - PAD.bottom);
-  axis.setAttribute('stroke', '#2e3250'); axis.setAttribute('stroke-width', '1');
+  axis.setAttribute('stroke', 'var(--border)'); axis.setAttribute('stroke-width', '1');
   svg.appendChild(axis);
 
   container.appendChild(svg);
 
   const focusNote = document.createElement('div');
-  focusNote.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:10px';
+  focusNote.style.cssText = 'font-size:var(--text-xs);color:var(--text-muted);margin-top:10px';
   focusNote.textContent = `Valeurs affichées ci-dessous au point : ${months[focusIdx]?.label ?? '—'} · cliquer un autre repère sur l'axe pour changer`;
   container.appendChild(focusNote);
 
   const legend = document.createElement('div');
-  legend.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:8px;font-size:12px';
+  legend.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:8px;font-size:var(--text-sm)';
   validSeries.forEach(s => {
     const isHidden = hiddenChartSeries.has(s.label);
     const curVal   = s.values[focusIdx];
@@ -1657,7 +1795,7 @@ function buildMultiLineChart(months, series, focusIdx, yDomain) {
     btn.title = isHidden ? `Afficher la courbe ${s.label}` : `Masquer la courbe ${s.label}`;
     btn.style.cssText = `display:inline-flex;align-items:center;gap:6px;padding:4px 9px;
       border-radius:20px;border:1px solid var(--border);background:${isHidden ? 'transparent' : 'var(--surface2)'};
-      color:var(--text-dim);cursor:pointer;font-size:12px;opacity:${isHidden ? 0.45 : 1};transition:opacity .15s`;
+      color:var(--text-dim);cursor:pointer;font-size:var(--text-sm);opacity:${isHidden ? 0.45 : 1};transition:opacity .15s`;
 
     const swatchNS = 'http://www.w3.org/2000/svg';
     const swatch = document.createElementNS(swatchNS, 'svg');
@@ -1702,7 +1840,7 @@ function buildCaChart(container, pData) {
 
   const allVals = [...caVals, ...pipVals, ...totVals, ...msVals.filter(v=>v!==null)];
   if (!allVals.some(v => v > 0)) {
-    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucune donnée sur cette période</div>`;
     return;
   }
 
@@ -1718,8 +1856,8 @@ function buildCaChart(container, pData) {
   for (let t = 0; t <= nT; t++) {
     const v = yMax * t / nT;
     const y = yPx(v).toFixed(1);
-    grid    += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>`;
-    yLabels += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#64748b">${fmtY(v)}</text>`;
+    grid    += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="0.8"/>`;
+    yLabels += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="var(--text-muted)">${fmtY(v)}</text>`;
   }
 
   pData.forEach((pd, i) => {
@@ -1730,12 +1868,12 @@ function buildCaChart(container, pData) {
 
     if (ca > 0) {
       const yCA = yPx(ca), hCA = H - PAD.bottom - yCA;
-      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yCA.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hCA).toFixed(1)}" fill="#22c55e" fill-opacity="0.7" rx="2">
+      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yCA.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hCA).toFixed(1)}" fill="var(--green)" fill-opacity="0.7" rx="2">
         <title>${pd.label} · CA Confirmé : ${Math.round(ca).toLocaleString('fr-FR')} €</title></rect>`;
     }
     if (pip > 0) {
       const yPip = yPx(ca + pip), hPip = yPx(ca) - yPip;
-      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yPip.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hPip).toFixed(1)}" fill="#38bdf8" fill-opacity="0.55" rx="2">
+      bars += `<rect x="${(x-barW).toFixed(1)}" y="${yPip.toFixed(1)}" width="${(barW).toFixed(1)}" height="${Math.max(0,hPip).toFixed(1)}" fill="var(--blue)" fill-opacity="0.55" rx="2">
         <title>${pd.label} · CA Pipeline : ${Math.round(pip).toLocaleString('fr-FR')} €</title></rect>`;
     }
 
@@ -1743,21 +1881,21 @@ function buildCaChart(container, pData) {
       const yMs = yPx(ms).toFixed(1), xMs = x.toFixed(1);
       if (i === 0 || msVals[i-1] === null) msLine += `M ${xMs} ${yMs}`;
       else msLine += ` L ${xMs} ${yMs}`;
-      msDots += `<circle cx="${xMs}" cy="${yMs}" r="3" fill="#f97316" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label} · Masse sal. : ${Math.round(ms).toLocaleString('fr-FR')} €</title></circle>`;
+      msDots += `<circle cx="${xMs}" cy="${yMs}" r="3" fill="var(--orange)" stroke="var(--surface)" stroke-width="1.5"><title>${pd.label} · Masse sal. : ${Math.round(ms).toLocaleString('fr-FR')} €</title></circle>`;
     }
 
     const label = n <= 12 ? pd.short : (i % Math.ceil(n/8) === 0 ? pd.short : '');
-    if (label) xLabels += `<text x="${x.toFixed(1)}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+    if (label) xLabels += `<text x="${x.toFixed(1)}" y="${H-5}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${label}</text>`;
   });
 
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
       ${grid}
       ${bars}
-      ${msLine ? `<path d="${msLine}" fill="none" stroke="#f97316" stroke-width="2" stroke-dasharray="5,3" stroke-linejoin="round"/>` : ''}
+      ${msLine ? `<path d="${msLine}" fill="none" stroke="var(--orange)" stroke-width="2" stroke-dasharray="5,3" stroke-linejoin="round"/>` : ''}
       ${msDots}
       ${yLabels}${xLabels}
-      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="var(--border)" stroke-width="1"/>
     </svg>`;
 }
 
@@ -1769,7 +1907,7 @@ function buildDualChart(container, periods, tjmValues, occValues) {
 
   const tjmFiltered = tjmValues.filter(v => v !== null);
   if (!tjmFiltered.length && !occValues.filter(v=>v!==null).length) {
-    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucune donnée sur cette période</div>`;
     return;
   }
 
@@ -1787,9 +1925,9 @@ function buildDualChart(container, periods, tjmValues, occValues) {
     const y    = (PAD.top + cH * (1 - frac)).toFixed(1);
     const occV = Math.round(frac * 100);
     const tjmV = Math.round(tjmMin + (tjmMax - tjmMin) * frac);
-    grid   += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>`;
-    yLeft  += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#4f6ef7">${tjmV}</text>`;
-    yRight += `<text x="${W-PAD.right+5}" y="${y}" dominant-baseline="middle" font-size="9" fill="#22c55e">${occV}%</text>`;
+    grid   += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="0.8"/>`;
+    yLeft  += `<text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="var(--accent)">${tjmV}</text>`;
+    yRight += `<text x="${W-PAD.right+5}" y="${y}" dominant-baseline="middle" font-size="9" fill="var(--green)">${occV}%</text>`;
   }
 
   const barW = Math.max(3, cW / Math.max(periods.length, 1) * 0.55);
@@ -1798,7 +1936,7 @@ function buildDualChart(container, periods, tjmValues, occValues) {
     const v = occValues[i];
     if (v === null) return;
     const x = xPx(i), y = occY(v), bH = H - PAD.bottom - y;
-    const col = v >= 80 ? '#22c55e' : v >= 50 ? '#eab308' : '#64748b';
+    const col = v >= 80 ? 'var(--green)' : v >= 50 ? 'var(--yellow)' : 'var(--text-muted)';
     bars += `<rect x="${(x - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0, bH).toFixed(1)}" fill="${col}" fill-opacity="0.22" rx="2"><title>${pd.label}: ${v}%</title></rect>`;
     if (bH > 14) bars += `<text x="${x.toFixed(1)}" y="${(y-3).toFixed(1)}" text-anchor="middle" font-size="8" fill="${col}" fill-opacity="0.85">${v}%</text>`;
   });
@@ -1809,24 +1947,24 @@ function buildDualChart(container, periods, tjmValues, occValues) {
     const v = tjmValues[i];
     const x = xPx(i).toFixed(1);
     const label = periods.length <= 12 ? pd.short : (i % Math.ceil(periods.length/8) === 0 ? pd.short : '');
-    if (label) xLabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+    if (label) xLabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${label}</text>`;
     if (v === null) { prevNull = true; return; }
     const y = tjmY(v).toFixed(1);
     pathSegs.push(prevNull ? `M ${x} ${y}` : `L ${x} ${y}`);
     prevNull = false;
-    dots += `<circle cx="${x}" cy="${y}" r="3" fill="#4f6ef7" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label}: ${v} €/j</title></circle>`;
-    dots += `<text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="#4f6ef7" fill-opacity="0.85">${v}€</text>`;
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.5"><title>${pd.label}: ${v} €/j</title></circle>`;
+    dots += `<text x="${x}" y="${(parseFloat(y)-7).toFixed(1)}" text-anchor="middle" font-size="8" fill="var(--accent)" fill-opacity="0.85">${v}€</text>`;
   });
 
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
       ${grid}
       ${bars}
-      <path d="${pathSegs.join(' ')}" fill="none" stroke="#4f6ef7" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="${pathSegs.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
       ${dots}
       ${yLeft}${yRight}${xLabels}
-      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
-      <line x1="${W-PAD.right}" x2="${W-PAD.right}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#22c55e" stroke-width="0.8" stroke-dasharray="3,3"/>
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="var(--border)" stroke-width="1"/>
+      <line x1="${W-PAD.right}" x2="${W-PAD.right}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="var(--green)" stroke-width="0.8" stroke-dasharray="3,3"/>
     </svg>`;
 }
 
@@ -1838,7 +1976,7 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
 
   const values = rawValues.filter(v => v !== null);
   if (!values.length) {
-    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px">Aucune donnée sur cette période</div>`;
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucune donnée sur cette période</div>`;
     return;
   }
 
@@ -1856,8 +1994,8 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
   for (let t = 0; t <= nT; t++) {
     const v = yMin + (yMax - yMin) * t / nT;
     const y = yPx(v).toFixed(1);
-    grid += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="#2e3250" stroke-width="0.8"/>
-      <text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="#64748b">${Math.round(v)}</text>`;
+    grid += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="0.8"/>
+      <text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="var(--text-muted)">${Math.round(v)}</text>`;
   }
 
   let pathSegs = [], areaSegs = [], prevI = null;
@@ -1865,7 +2003,7 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
     const v = rawValues[i];
     const x = xPx(i).toFixed(1);
     const label = periods.length <= 12 ? pd.short : (i % Math.ceil(periods.length / 8) === 0 ? pd.short : '');
-    if (label) xlabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="#64748b">${label}</text>`;
+    if (label) xlabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${label}</text>`;
     if (v === null) { prevI = null; return; }
     const y = yPx(v).toFixed(1);
     if (prevI === null) {
@@ -1878,16 +2016,16 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
     if (i === rawValues.length - 1 || rawValues[i+1] === null) {
       areaSegs.push(`L ${x} ${H-PAD.bottom} Z`);
     }
-    const col = opts.color || '#4f6ef7';
-    dots += `<circle cx="${x}" cy="${y}" r="3" fill="${col}" stroke="#1a1d27" stroke-width="1.5"><title>${pd.label}: ${Math.round(v)}${opts.unit?' '+opts.unit:''}</title></circle>`;
+    const col = opts.color || 'var(--accent)';
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="${col}" stroke="var(--surface)" stroke-width="1.5"><title>${pd.label}: ${Math.round(v)}${opts.unit?' '+opts.unit:''}</title></circle>`;
     prevI = i;
   });
 
-  const col = opts.color || '#4f6ef7';
+  const col = opts.color || 'var(--accent)';
   container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
       ${grid}
-      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="#2e3250" stroke-width="1"/>
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="var(--border)" stroke-width="1"/>
       <path d="${areaSegs.join(' ')}" fill="${col}" fill-opacity="0.08"/>
       <path d="${pathSegs.join(' ')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
       ${dots}
@@ -2128,7 +2266,7 @@ function renderMissionEvents() {
         <td>${MISSION_EVENT_LABELS[e.type] || e.type}</td>
         <td>${fmtD(e.date)}</td>
         <td>${e.resumeDate ? fmtD(e.resumeDate) : '—'}</td>
-        <td><button class="btn-icon" onclick="removeMissionEvent('${e.id}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button></td>
+        <td><button class="btn-icon" onclick="removeMissionEvent('${e.id}')" title="Supprimer" aria-label="Supprimer cette modification" style="width:22px;height:22px;font-size:var(--text-sm)">×</button></td>
       </tr>`;
   });
 }
@@ -2140,8 +2278,8 @@ function updateTcDisplay() {
   if (current > 0) {
     const tc = Math.round(current * 1.32);
     const diff = current - cc;
-    disp.innerHTML = `TC : <strong style="color:var(--purple)">${tc.toLocaleString('fr-FR')} €/j</strong><div style="font-size:11px;color:var(--text-muted);margin-top:2px">Marge 32% incluse</div>`
-      + (modalCostRevisions.length ? `<div style="font-size:12px;margin-top:4px">Coût complet actuel : <strong style="color:var(--orange)">${current.toLocaleString('fr-FR')} €/j</strong> <span style="color:${diff>=0?'var(--green)':'var(--red)'}">(${diff>=0?'+':''}${diff} €)</span></div>` : '');
+    disp.innerHTML = `TC : <strong style="color:var(--purple)">${tc.toLocaleString('fr-FR')} €/j</strong><div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:2px">Marge 32% incluse</div>`
+      + (modalCostRevisions.length ? `<div style="font-size:var(--text-sm);margin-top:4px">Coût complet actuel : <strong style="color:var(--orange)">${current.toLocaleString('fr-FR')} €/j</strong> <span style="color:${diff>=0?'var(--green)':'var(--red)'}">(${diff>=0?'+':''}${diff} €)</span></div>` : '');
   } else {
     disp.textContent = '';
   }
@@ -2173,7 +2311,7 @@ function renderCostRevisions() {
   el.innerHTML = '';
   const baseCc = parseFloat(document.getElementById('cf-cout-complet').value) || 0;
   if (!modalCostRevisions.length) {
-    el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px 0 10px">Aucune révision — le coût complet de base s'applique.</div>`;
+    el.innerHTML = `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:6px 0 10px">Aucune révision — le coût complet de base s'applique.</div>`;
     return;
   }
   modalCostRevisions.forEach((r, i) => {
@@ -2184,7 +2322,7 @@ function renderCostRevisions() {
         <span class="revision-date">${fmtD(r.date)}</span>
         <span class="revision-tjm">${r.coutComplet.toLocaleString('fr-FR')} €/j</span>
         ${prev ? `<span class="revision-delta ${diff>=0?'delta-up':'delta-down'}">${diff>=0?'+':''}${diff} €</span>` : ''}
-        <button class="btn-icon" onclick="removeCostRevision('${r.date}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button>
+        <button class="btn-icon" onclick="removeCostRevision('${r.date}')" title="Supprimer" aria-label="Supprimer cette révision de coût" style="width:22px;height:22px;font-size:var(--text-sm)">×</button>
       </div>`;
   });
 }
@@ -2347,7 +2485,7 @@ function renderRevisions() {
         <td>${r.base ? 'Mise en place · ' : ''}${fmtD(r.date)}</td>
         <td>${margeHtml}</td>
         <td>${trendHtml}</td>
-        <td>${r.base ? '' : `<button class="btn-icon" onclick="removeRevision('${r.date}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button>`}</td>
+        <td>${r.base ? '' : `<button class="btn-icon" onclick="removeRevision('${r.date}')" title="Supprimer" aria-label="Supprimer cette révision" style="width:22px;height:22px;font-size:var(--text-sm)">×</button>`}</td>
       </tr>`;
     prevTjm = curTjm;
   });
@@ -2695,7 +2833,7 @@ function deleteOpportunite() {
 function renderOpportuniteCandidatures() {
   const el = document.getElementById('opp-candidatures-list');
   if (!modalCandidatures.length) {
-    el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px 0 10px">Aucun candidat pour l'instant.</div>`;
+    el.innerHTML = `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:6px 0 10px">Aucun candidat pour l'instant.</div>`;
     return;
   }
   const usedConsIds = modalCandidatures.map(c => c.consultantId).filter(Boolean);
@@ -2705,7 +2843,7 @@ function renderOpportuniteCandidatures() {
     const cons = S.consultants.find(c => c.id === cand.consultantId);
 
     const consHeader = isPersisted
-      ? `<span style="flex:1;font-size:13px;font-weight:600">${cons ? cons.name : 'Consultant supprimé'}</span>`
+      ? `<span style="flex:1;font-size:var(--text-base);font-weight:600">${cons ? cons.name : 'Consultant supprimé'}</span>`
       : `<select class="form-select" style="flex:1" onchange="setCandidatureConsultant('${cand.id}', this.value)">
           <option value="">— Choisir un consultant —</option>
           ${S.consultants.filter(c => c.id===cand.consultantId || !usedConsIds.includes(c.id))
@@ -2714,33 +2852,33 @@ function renderOpportuniteCandidatures() {
 
     const missionBlock = (cand.status==='gagnee' && cand.prestationId && S.prestations.find(p=>p.id===cand.prestationId))
       ? (() => { const p = S.prestations.find(x=>x.id===cand.prestationId); const pStatus = prestationStatus(p); return `
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:var(--text-dim)">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:var(--text-sm);color:var(--text-dim)">
           <span class="status-pill pill-${pStatus}">${statusLabel(pStatus)}</span>
           <span>${fmtD(p.startDate)} → ${fmtD(p.endDate)} · ${currentTjm(p).toLocaleString('fr-FR')} €/j</span>
-          <button class="btn-add-small" style="padding:2px 8px;font-size:11px;margin-left:auto" onclick="editMissionFromOpportunite('${p.id}')">Modifier la mission</button>
+          <button class="btn-add-small" style="padding:2px 8px;font-size:var(--text-xs);margin-left:auto" onclick="editMissionFromOpportunite('${p.id}')">Modifier la mission</button>
         </div>`; })()
       : '';
 
     const actions = cand.status === 'en_attente' ? `
-        <button class="btn-icon" title="Marquer gagnée" style="color:var(--green)" onclick="markCandidatureWonInModal('${cand.id}')">✓</button>
-        <button class="btn-icon" title="Marquer perdue" style="color:var(--red)" onclick="markCandidatureLostInModal('${cand.id}')">✗</button>` : '';
+        <button class="btn-icon" title="Marquer gagnée" aria-label="Marquer cette candidature gagnée" style="color:var(--green)" onclick="markCandidatureWonInModal('${cand.id}')">✓</button>
+        <button class="btn-icon" title="Marquer perdue" aria-label="Marquer cette candidature perdue" style="color:var(--red)" onclick="markCandidatureLostInModal('${cand.id}')">✗</button>` : '';
     const removeBtn = cand.status !== 'gagnee'
-      ? `<button class="btn-icon" title="Retirer ce candidat" onclick="removeCandidatureInModal('${cand.id}')">×</button>` : '';
+      ? `<button class="btn-icon" title="Retirer ce candidat" aria-label="Retirer ce candidat" onclick="removeCandidatureInModal('${cand.id}')">×</button>` : '';
 
     const pushRows = (cand.bookPushes||[]).map(p => `
       <div class="revision-item">
         <span class="revision-date">${fmtD(p.date)}</span>
-        <button class="btn-icon" title="Supprimer" style="width:22px;height:22px;font-size:12px;margin-left:auto" onclick="removeBookPushInModal('${cand.id}','${p.id}')">×</button>
-      </div>`).join('') || `<div style="font-size:12px;color:var(--text-muted);padding:4px 0">Aucun push.</div>`;
+        <button class="btn-icon" title="Supprimer" aria-label="Supprimer ce push de book" style="width:22px;height:22px;font-size:var(--text-sm);margin-left:auto" onclick="removeBookPushInModal('${cand.id}','${p.id}')">×</button>
+      </div>`).join('') || `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:4px 0">Aucun push.</div>`;
     const soutRows = (cand.soutenances||[]).map(s => {
       const cls = s.resultat === 'validee' ? 'delta-up' : s.resultat === 'refusee' ? 'delta-down' : '';
       return `
       <div class="revision-item">
         <span class="revision-date">${fmtD(s.date)}</span>
         <span class="revision-delta ${cls}">${resultatSoutenanceLabel(s.resultat)}</span>
-        <button class="btn-icon" title="Supprimer" style="width:22px;height:22px;font-size:12px;margin-left:auto" onclick="removeSoutenanceInModal('${cand.id}','${s.id}')">×</button>
+        <button class="btn-icon" title="Supprimer" aria-label="Supprimer cette soutenance" style="width:22px;height:22px;font-size:var(--text-sm);margin-left:auto" onclick="removeSoutenanceInModal('${cand.id}','${s.id}')">×</button>
       </div>`;
-    }).join('') || `<div style="font-size:12px;color:var(--text-muted);padding:4px 0">Aucune soutenance.</div>`;
+    }).join('') || `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:4px 0">Aucune soutenance.</div>`;
 
     return `
       <div class="opp-cand-card">
@@ -2752,7 +2890,7 @@ function renderOpportuniteCandidatures() {
         ${missionBlock}
         <div class="opp-cand-body">
           <div class="opp-cand-sublist">
-            <div class="form-label" style="font-size:11px;margin-bottom:4px">Pushs de book/CV</div>
+            <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Pushs de book/CV</div>
             <div class="revision-list">${pushRows}</div>
             <div class="add-revision-row">
               <input type="date" class="form-input" id="push-date-${cand.id}" style="flex:1" />
@@ -2760,7 +2898,7 @@ function renderOpportuniteCandidatures() {
             </div>
           </div>
           <div class="opp-cand-sublist">
-            <div class="form-label" style="font-size:11px;margin-bottom:4px">Soutenances</div>
+            <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Soutenances</div>
             <div class="revision-list">${soutRows}</div>
             <div class="add-revision-row">
               <input type="date" class="form-input" id="sout-date-${cand.id}" style="flex:1" />

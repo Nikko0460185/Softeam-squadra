@@ -7,8 +7,8 @@
 .consultant-item:hover { background: var(--surface2); }
 .consultant-item.active { background: var(--accent-soft); }
 
-.consultant-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; }
+.consultant-name { font-size:var(--text-base); font-weight: 500; flex: 1; min-width: 0; }
 .consultant-name small {
-  display: block; font-size: 11px; color: var(--text-muted);
+  display: block; font-size:var(--text-xs); color: var(--text-muted);
   font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
