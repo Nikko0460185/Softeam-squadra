@@ -20,8 +20,9 @@ let modalRevisions = []; // [{date, tjm}]
 let modalCostRevisions = []; // [{date, coutComplet}]
 let modalCandidatures = []; // [{id, consultantId, status, bookPushes:[{id,date}], soutenances:[{id,date,resultat}]}]
 let modalWonCandidatureId = null; // set par markCandidatureWonInModal(), consommé par savePrestation()
-let extActive  = false;
-let exitActive = false;
+let modalMissionEvents = []; // [{id, type: 'prolongation'|'pause'|'sortie_anticipee', date, resumeDate?}]
+let prestModalSnapshot = null; // état du formulaire à l'ouverture, pour détecter une saisie non enregistrée (cancelPrestModal())
+let oppModalSnapshot = null; // idem, pour la modale Opportunité (cancelOpportuniteModal())
 let statsPeriod = 'quarterly'; // 'quarterly' | '5y' | '10y' — pilote les tableaux/graphiques du bas de la vue Statistiques
 
 // Navigation dédiée au graphique "Chiffre d'affaires & Marge" (indépendante de statsPeriod)
@@ -91,11 +92,11 @@ function consultantStatusPills(c) {
 }
 
 function statusLabel(s) {
-  return { en_cours:'En cours', terminee:'Terminée' }[s] || s;
+  return { en_cours:'En cours', en_pause:'En pause', terminee:'Terminée' }[s] || s;
 }
 
 function opportuniteStatusLabel(s) {
-  return { ouvert:'Ouvert', pourvu:'Pourvu', abandonne:'Abandonné' }[s] || s;
+  return { ouvert:'Ouvert', pourvu:'Gagnée', abandonne:'Perdue' }[s] || s;
 }
 function candidatureStatusLabel(s) {
   return { en_attente:'En attente', gagnee:'Gagnée', perdue:'Perdue' }[s] || s;
@@ -111,25 +112,41 @@ function natureBadge(n) {
   return `<span class="nature-badge nature-${n||'mission'}">${lbl}</span>`;
 }
 
-// Effective end date: earlyExit > extension > planned
+// Historique des modifications de mission (p.missionEvents : [{id, type, date, resumeDate?}],
+// type = 'prolongation' | 'pause' | 'sortie_anticipee') — plusieurs entrées possibles dans le
+// temps, comme tjmRevisions. lastEndEvent() = la décision la plus récente qui redéfinit la fin
+// de mission (une prolongation ultérieure écrase une sortie anticipée plus ancienne, et
+// inversement) ; une "pause" n'affecte pas la fin, seulement le statut pendant sa fenêtre.
+function lastEndEvent(p) {
+  const events = (p.missionEvents || []).filter(e => e.type === 'prolongation' || e.type === 'sortie_anticipee');
+  return events.length ? events[events.length - 1] : null;
+}
+function activePause(p, atDate) {
+  return (p.missionEvents || []).find(e => e.type === 'pause' && e.date <= atDate && (!e.resumeDate || e.resumeDate > atDate));
+}
 function effectiveEnd(p) {
-  if (p.earlyExit?.active && p.earlyExit?.date) return p.earlyExit.date;
-  if (p.extension?.active && p.extension?.date)  return p.extension.date;
-  return p.endDate;
+  return lastEndEvent(p)?.date || p.endDate;
 }
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 
 // Statut calculé, jamais saisi à la main : une prestation existe toujours déjà confirmée
-// (créée directement ou issue d'une candidature gagnée), donc seule la date compte pour savoir
-// si elle est encore en cours — pas de risque d'un statut resté "En cours" après coup par oubli.
-function prestationStatus(p) { return effectiveEnd(p) < todayStr() ? 'terminee' : 'en_cours'; }
+// (créée directement ou issue d'une candidature gagnée), donc seule la date (et une éventuelle
+// pause en cours) compte pour savoir où elle en est — pas de risque d'un statut resté "En cours"
+// après coup par oubli.
+function prestationStatus(p) {
+  const today = todayStr();
+  if (activePause(p, today)) return 'en_pause';
+  return effectiveEnd(p) < today ? 'terminee' : 'en_cours';
+}
 
 // Current TJM = last applicable revision or base TJM
 function currentTjm(p) {
   const today = new Date().toISOString().slice(0,10);
   if (!p.tjmRevisions?.length) return p.tjm;
-  const past = p.tjmRevisions.filter(r => r.date <= today);
+  // Une révision peut ne porter qu'un taux d'activité (pas de TJM) : on ignore ces entrées ici,
+  // on cherche la dernière qui renseigne bien un TJM.
+  const past = p.tjmRevisions.filter(r => r.date <= today && r.tjm !== undefined);
   return past.length ? past[past.length-1].tjm : p.tjm;
 }
 
@@ -162,8 +179,7 @@ function seedDemo() {
       id: genId(), consultantId: ids[0],
       client: 'Société Générale', clientService: 'DSI — Pôle API',
       startDate: d(y,m-3,1), endDate: d(y,m+3,30),
-      extension:  { active: true,  date: d(y,m+6,30) },
-      earlyExit:  { active: false, date: '' },
+      missionEvents: [{ id: genId(), type: 'prolongation', date: d(y,m+6,30) }],
       tjm: 700, fte: 5, nature: 'mission', tjmRevisions: [{ date: d(y,m-1,1), tjm: 720 }],
       notes: 'Extension confirmée pour Q4'
     },
@@ -171,8 +187,7 @@ function seedDemo() {
       id: genId(), consultantId: ids[1],
       client: 'Orange', clientService: 'PMO DSI',
       startDate: d(y,m-7,1), endDate: d(y,m-2,28),
-      extension:  { active: false, date: '' },
-      earlyExit:  { active: false, date: '' },
+      missionEvents: [],
       tjm: 620, fte: 5, nature: 'mission', tjmRevisions: [{ date: d(y,m-4,1), tjm: 650 }],
       notes: ''
     },
@@ -180,8 +195,7 @@ function seedDemo() {
       id: genId(), consultantId: ids[1],
       client: 'Carrefour', clientService: 'Digital & IT',
       startDate: d(y,m,1), endDate: d(y,m+7,31),
-      extension:  { active: false, date: '' },
-      earlyExit:  { active: false, date: '' },
+      missionEvents: [],
       tjm: 680, fte: 4, nature: 'mission', tjmRevisions: [],
       notes: 'Renouvellement trimestriel prévu — 4/5'
     },
@@ -189,8 +203,7 @@ function seedDemo() {
       id: genId(), consultantId: ids[2],
       client: 'TotalEnergies', clientService: 'Data & Analytics',
       startDate: d(y,m-2,15), endDate: d(y,m+5,14),
-      extension:  { active: false, date: '' },
-      earlyExit:  { active: true,  date: d(y,m+2,28) },
+      missionEvents: [{ id: genId(), type: 'sortie_anticipee', date: d(y,m+2,28) }],
       tjm: 690, fte: 5, nature: 'forfait', tjmRevisions: [],
       notes: 'Sortie anticipée négociée'
     },
@@ -198,8 +211,7 @@ function seedDemo() {
       id: genId(), consultantId: ids[3],
       client: 'SNCF', clientService: 'Systèmes Embarqués',
       startDate: d(y,m-6,1), endDate: d(y,m-3,31),
-      extension:  { active: false, date: '' },
-      earlyExit:  { active: false, date: '' },
+      missionEvents: [],
       tjm: 730, fte: 5, nature: 'mission', tjmRevisions: [],
       notes: ''
     },
@@ -215,8 +227,7 @@ function seedDemo() {
     id: axaPrestId, consultantId: ids[1],
     client: 'AXA', clientService: 'Assurance Digital',
     startDate: d(y,m-1,1), endDate: d(y,m+8,31),
-    extension:  { active: false, date: '' },
-    earlyExit:  { active: false, date: '' },
+    missionEvents: [],
     tjm: 710, fte: 5, nature: 'mission', tjmRevisions: [],
     notes: 'Mission démarrée suite à l\'opportunité gagnée'
   });
@@ -461,8 +472,10 @@ function renderGantt() {
         // littéral 'pipeline' (fixé par pipelineItemFrom*()), pas de date à comparer pour eux.
         const barStatus = p.kind === 'pipeline' ? p.status : prestationStatus(p);
 
+        const endEvt = p.kind === 'pipeline' ? null : lastEndEvent(p);
+
         const maxRight = Math.max(endPct,
-          p.extension?.active && p.extension.date ? px(p.extension.date) : endPct);
+          endEvt?.type === 'prolongation' ? px(endEvt.date) : endPct);
         if (maxRight <= 0 || startPct >= 100) return;
 
         function seg(cls, left, width, extraStyle, html) {
@@ -476,19 +489,19 @@ function renderGantt() {
           tl.appendChild(el);
         }
 
-        if (p.extension?.active && p.extension?.date && p.extension.date > p.endDate) {
+        if (endEvt?.type === 'prolongation' && endEvt.date > p.endDate) {
           const mainL = clamp(startPct);
           const mainW = clamp(endPct) - mainL;
           const extL  = clamp(endPct);
-          const extW  = clamp(px(p.extension.date)) - extL;
+          const extW  = clamp(px(endEvt.date)) - extL;
           seg(`prest-bar bar-${barStatus}`, mainL, mainW,
             extW > 0 ? 'border-radius:4px 0 0 4px;' : '',
             `<div class="bar-dot"></div>${label}`);
           if (extW > 0)
-            seg(`ext-bar ext-bar-${barStatus}`, extL, extW, '', `↗ ${fmtD(p.extension.date)}`);
+            seg(`ext-bar ext-bar-${barStatus}`, extL, extW, '', `↗ ${fmtD(endEvt.date)}`);
 
-        } else if (p.earlyExit?.active && p.earlyExit?.date && p.earlyExit.date < p.endDate) {
-          const exitPct = px(p.earlyExit.date);
+        } else if (endEvt?.type === 'sortie_anticipee' && endEvt.date < p.endDate) {
+          const exitPct = px(endEvt.date);
           const mainL   = clamp(startPct);
           const mainW   = clamp(exitPct) - mainL;
           const tailL   = clamp(exitPct);
@@ -554,8 +567,11 @@ function scrollGanttToToday() {
 function buildTooltip(p, c) {
   let lines = [`${c.name}`, `${p.client}${p.clientService ? ' / '+p.clientService : ''}`,
     `${fmtD(p.startDate)} → ${fmtD(p.endDate)}`];
-  if (p.extension?.active && p.extension.date) lines.push(`Prolongé jusqu'au ${fmtD(p.extension.date)}`);
-  if (p.earlyExit?.active && p.earlyExit.date)  lines.push(`Sortie anticipée: ${fmtD(p.earlyExit.date)}`);
+  const endEvt = lastEndEvent(p);
+  if (endEvt?.type === 'prolongation')     lines.push(`Prolongé jusqu'au ${fmtD(endEvt.date)}`);
+  if (endEvt?.type === 'sortie_anticipee') lines.push(`Sortie anticipée: ${fmtD(endEvt.date)}`);
+  const pause = activePause(p, todayStr());
+  if (pause) lines.push(`En pause depuis le ${fmtD(pause.date)}${pause.resumeDate ? ` (reprise le ${fmtD(pause.resumeDate)})` : ''}`);
   lines.push(`TJM: ${currentTjm(p).toLocaleString('fr-FR')} €/j`);
   return lines.join('\n');
 }
@@ -645,10 +661,14 @@ function prestationToRow(p) {
   const tjmCur = currentTjm(p);
   const hasRevision = p.tjmRevisions?.length > 0;
   let modifiers = '';
-  if (p.extension?.active && p.extension.date)
-    modifiers += `<div class="ext-label">↗ Prolongé → ${fmtD(p.extension.date)}</div>`;
-  if (p.earlyExit?.active && p.earlyExit.date)
-    modifiers += `<div class="exit-label">↙ Sortie anticipée → ${fmtD(p.earlyExit.date)}</div>`;
+  const endEvt = lastEndEvent(p);
+  if (endEvt?.type === 'prolongation')
+    modifiers += `<div class="ext-label">↗ Prolongé → ${fmtD(endEvt.date)}</div>`;
+  if (endEvt?.type === 'sortie_anticipee')
+    modifiers += `<div class="exit-label">↙ Sortie anticipée → ${fmtD(endEvt.date)}</div>`;
+  const pause = activePause(p, todayStr());
+  if (pause)
+    modifiers += `<div class="exit-label">⏸ En pause${pause.resumeDate ? ` → reprise ${fmtD(pause.resumeDate)}` : ''}</div>`;
   const status = prestationStatus(p);
   return {
     sortDate: p.startDate,
@@ -1161,7 +1181,8 @@ function buildEventsDiv(cons, today) {
     const c    = cons.find(x=>x.id===p.consultantId);
     const days = Math.round((endD - today) / 86400000);
     const col  = days <= 30 ? 'var(--red)' : 'var(--orange)';
-    const tag  = p.extension?.active ? ' (prolongé)' : p.earlyExit?.active ? ' (anticipée)' : '';
+    const evt  = lastEndEvent(p);
+    const tag  = evt?.type === 'prolongation' ? ' (prolongé)' : evt?.type === 'sortie_anticipee' ? ' (anticipée)' : '';
     evHtml += '<div class="event-row">'
       + '<div class="event-dot" style="background:' + col + '"></div>'
       + '<div style="flex:1;min-width:0">'
@@ -1880,7 +1901,7 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
 // entités, sinon les pastilles Opportunité/Candidature du tableau unifié (Vue liste) ne
 // correspondent à aucun filtre affiché.
 function statusBucket(kind, status) {
-  if (kind === 'prestation')  return { en_cours: 'en_cours', terminee: 'gagne' }[status];
+  if (kind === 'prestation')  return { en_cours: 'en_cours', en_pause: 'en_cours', terminee: 'gagne' }[status];
   if (kind === 'opportunite') return { ouvert: 'en_attente', pourvu: 'gagne', abandonne: 'perdu' }[status];
   if (kind === 'candidature') return { en_attente: 'en_attente', gagnee: 'gagne', perdue: 'perdu' }[status];
   return undefined;
@@ -1948,26 +1969,22 @@ function openPrestModal(p, forceConsId) {
   });
   sel.disabled = currentProfile?.type === 'consultant';
 
-  extActive  = false;
-  exitActive = false;
-
   if (p) {
     document.getElementById('prest-modal-title').textContent = 'Modifier la prestation';
     document.getElementById('btn-del-prest').style.display = 'block';
     document.getElementById('f-id').value       = p.id;
     document.getElementById('f-cons').value     = p.consultantId;
     document.getElementById('f-nature').value   = p.nature || 'mission';
+    document.getElementById('f-titre').value    = p.titre || '';
     document.getElementById('f-client').value   = p.client || '';
     document.getElementById('f-service').value  = p.clientService || '';
     document.getElementById('f-start').value    = p.startDate || '';
     document.getElementById('f-end').value      = p.endDate || '';
     document.getElementById('f-tjm').value      = p.tjm || '';
     document.getElementById('f-fte').value      = p.fte || 5;
+    document.getElementById('f-uo').value       = p.limiteUOAn || '';
     document.getElementById('f-notes').value    = p.notes || '';
-    extActive = !!(p.extension?.active && p.extension.date);
-    document.getElementById('f-ext-date').value = p.extension?.date || '';
-    exitActive = !!(p.earlyExit?.active && p.earlyExit.date);
-    document.getElementById('f-exit-date').value = p.earlyExit?.date || '';
+    modalMissionEvents = p.missionEvents ? p.missionEvents.map(e => ({...e})) : [];
     modalRevisions = p.tjmRevisions ? [...p.tjmRevisions] : [];
     document.getElementById('f-opportunite-id').value = p.opportuniteId || '';
   } else {
@@ -1975,15 +1992,16 @@ function openPrestModal(p, forceConsId) {
     document.getElementById('btn-del-prest').style.display = 'none';
     document.getElementById('f-id').value       = '';
     document.getElementById('f-nature').value   = '';
+    document.getElementById('f-titre').value    = '';
     document.getElementById('f-client').value   = '';
     document.getElementById('f-service').value  = '';
     document.getElementById('f-start').value    = '';
     document.getElementById('f-end').value      = '';
-    document.getElementById('f-ext-date').value = '';
-    document.getElementById('f-exit-date').value= '';
     document.getElementById('f-tjm').value      = '';
     document.getElementById('f-fte').value      = '5';
+    document.getElementById('f-uo').value       = '';
     document.getElementById('f-notes').value    = '';
+    modalMissionEvents = [];
     modalRevisions = [];
     document.getElementById('f-opportunite-id').value = '';
     if (forceConsId) sel.value = forceConsId;
@@ -1996,33 +2014,123 @@ function openPrestModal(p, forceConsId) {
   else if (p.opportuniteId) showOriginBannerLinked();
   else showOriginBannerMuted();
 
-  applyToggleUI();
+  document.getElementById('ev-type').value = 'prolongation';
+  updateEvTypeUI();
   renderRevisions();
+  renderMissionEvents();
   updateBadges();
+  updateLockedSections();
+  document.getElementById('mission-edit-section').style.display = 'none';
+  document.getElementById('tarif-edit-section').style.display   = 'none';
+  prestModalSnapshot = prestFormState();
 }
 
-function toggleOption(which) {
-  if (which === 'ext') {
-    extActive = !extActive;
-    if (extActive) exitActive = false;
-  } else {
-    exitActive = !exitActive;
-    if (exitActive) extActive = false;
+// TJM initial/Taux d'activité et Modification de la mission ne sont des champs de "définition"
+// qu'à la création directe d'une prestation (pas issue d'une opportunité) : dès que la prestation
+// existe déjà (édition) ou qu'elle vient d'une candidature gagnée, ils passent en lecture seule —
+// tout changement passe alors par les tables de tarification/modification ci-dessous. Les 2
+// paires de blocs sont mutuellement exclusives : champs de définition (création) d'un côté,
+// table en lecture seule + bouton "Modifier" de l'autre — jamais les deux en même temps.
+function updateLockedSections() {
+  const existing = !!document.getElementById('f-id').value;
+  const fromOpp  = !!document.getElementById('f-opportunite-id').value;
+  // Cas particulier : une prestation issue d'une candidature gagnée n'a pas forcément hérité
+  // d'un TJM (champ optionnel côté Opportunité). Verrouiller quand même le TJM/Taux d'activité
+  // rendrait ce champ obligatoire invisible, donc impossible à corriger (bug constaté en test).
+  // Le verrouillage tarification ne s'applique donc que s'il y a effectivement une valeur reprise.
+  const hasBaseTjm  = !!document.getElementById('f-tjm').value;
+  const tarifLocked = existing || (fromOpp && hasBaseTjm);
+  // La mission (prolongation/pause/sortie anticipée), elle, n'a pas ce problème : rien à
+  // reprendre de l'opportunité, donc rien à masquer faute de valeur.
+  const missionLocked = existing || fromOpp;
+
+  document.getElementById('f-tjm').disabled = tarifLocked;
+  document.getElementById('f-fte').disabled = tarifLocked;
+  document.getElementById('tjm-fte-row').style.display          = tarifLocked ? 'none' : '';
+  document.getElementById('tarif-history-block').style.display   = tarifLocked ? '' : 'none';
+  document.getElementById('mission-history-block').style.display = missionLocked ? '' : 'none';
+}
+
+// Capture l'état courant du formulaire Prestation (champs + révisions + modifications de
+// mission), pour détecter une saisie non enregistrée avant de fermer la modale sans confirmation.
+function prestFormState() {
+  const data = {};
+  document.querySelectorAll('#prest-modal-box input, #prest-modal-box select, #prest-modal-box textarea')
+    .forEach(el => { if (el.id) data[el.id] = el.value; });
+  data._revisions     = modalRevisions;
+  data._missionEvents = modalMissionEvents;
+  return JSON.stringify(data);
+}
+
+function cancelPrestModal() {
+  if (prestFormState() !== prestModalSnapshot) {
+    if (!confirm('Des modifications non enregistrées seront perdues. Annuler quand même ?')) return;
   }
-  applyToggleUI();
+  closeModal('prest-overlay');
+}
+
+// Modification de la mission et Révisions TJM sont des modifications d'une prestation déjà
+// créée, pas des attributs de base : masquées par défaut derrière un bouton "Modifier", pour que
+// la fiche affiche d'abord un état lisible plutôt que tous les formulaires d'édition à la fois.
+function toggleMissionEdit() {
+  const el = document.getElementById('mission-edit-section');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+function toggleTarifEdit() {
+  const el = document.getElementById('tarif-edit-section');
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+// N'affiche "Date de reprise" que pour une Pause (seul type concerné par une reprise).
+function updateEvTypeUI() {
+  document.getElementById('ev-resume-wrap').style.display =
+    document.getElementById('ev-type').value === 'pause' ? '' : 'none';
+}
+
+const MISSION_EVENT_LABELS = { prolongation: 'Prolongation', pause: 'Pause', sortie_anticipee: 'Sortie anticipée' };
+
+function addMissionEvent() {
+  const type       = document.getElementById('ev-type').value;
+  const date       = document.getElementById('ev-date').value;
+  const resumeDate = document.getElementById('ev-resume').value;
+  if (!date) { showToast('Saisissez une date d\'effet', 'error'); return; }
+  if (type === 'pause' && resumeDate && resumeDate <= date) {
+    showToast('La date de reprise doit être après la date d\'effet', 'error'); return;
+  }
+  modalMissionEvents.push({
+    id: genId(), type, date,
+    ...(type === 'pause' && resumeDate ? { resumeDate } : {}),
+  });
+  modalMissionEvents.sort((a,b) => a.date.localeCompare(b.date));
+  document.getElementById('ev-date').value   = '';
+  document.getElementById('ev-resume').value = '';
+  renderMissionEvents();
   updateBadges();
 }
 
-function applyToggleUI() {
-  const applyToggle = (active, headerId, checkId, bodyId) => {
-    document.getElementById(headerId).classList.toggle('active', active);
-    const ch = document.getElementById(checkId);
-    ch.classList.toggle('checked', active);
-    ch.innerHTML = active ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>` : '';
-    document.getElementById(bodyId).classList.toggle('open', active);
-  };
-  applyToggle(extActive,  'ext-toggle-header',  'ext-check',  'ext-body');
-  applyToggle(exitActive, 'exit-toggle-header', 'exit-check', 'exit-body');
+function removeMissionEvent(id) {
+  if (!confirm('Supprimer cette modification ?')) return;
+  modalMissionEvents = modalMissionEvents.filter(e => e.id !== id);
+  renderMissionEvents();
+  updateBadges();
+}
+
+function renderMissionEvents() {
+  const tbody = document.getElementById('mission-table-body');
+  tbody.innerHTML = '';
+  if (!modalMissionEvents.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);padding:6px 0;white-space:normal">Aucune modification — la mission suit ses dates initiales.</td></tr>`;
+    return;
+  }
+  modalMissionEvents.forEach(e => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${MISSION_EVENT_LABELS[e.type] || e.type}</td>
+        <td>${fmtD(e.date)}</td>
+        <td>${e.resumeDate ? fmtD(e.resumeDate) : '—'}</td>
+        <td><button class="btn-icon" onclick="removeMissionEvent('${e.id}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button></td>
+      </tr>`;
+  });
 }
 
 function updateTcDisplay() {
@@ -2082,18 +2190,21 @@ function renderCostRevisions() {
 }
 
 function updateBadges() {
-  const extDate  = document.getElementById('f-ext-date').value;
-  const exitDate = document.getElementById('f-exit-date').value;
-  document.getElementById('ext-badge').textContent  = extActive  && extDate  ? `→ ${fmtD(extDate)}`  : (extActive ? 'date à saisir' : 'désactivée');
-  document.getElementById('exit-badge').textContent = exitActive && exitDate ? `→ ${fmtD(exitDate)}` : (exitActive ? 'date à saisir' : 'désactivée');
+  // Même logique que prestationStatus()/effectiveEnd()/activePause(), mais sur l'état du
+  // formulaire (modalMissionEvents, pas encore une vraie Prestation) — pour afficher le statut
+  // calculé en direct pendant la saisie.
+  const endDate  = document.getElementById('f-end').value;
+  const endEvts  = modalMissionEvents.filter(e => e.type === 'prolongation' || e.type === 'sortie_anticipee');
+  const effEnd   = endEvts.length ? endEvts[endEvts.length - 1].date : endDate;
+  const today    = todayStr();
+  const pauseNow = modalMissionEvents.find(e => e.type === 'pause' && e.date <= today && (!e.resumeDate || e.resumeDate > today));
 
-  // Même logique que prestationStatus()/effectiveEnd(), mais sur l'état du formulaire (pas
-  // encore une vraie Prestation) — pour afficher le statut calculé en direct pendant la saisie.
-  const endDate = document.getElementById('f-end').value;
-  const effEnd  = (exitActive && exitDate) ? exitDate : (extActive && extDate) ? extDate : endDate;
   const statusEl = document.getElementById('f-status-display');
-  if (effEnd) {
-    const terminee = effEnd < todayStr();
+  if (pauseNow) {
+    statusEl.textContent = 'En pause';
+    statusEl.className = 'status-pill pill-en_pause';
+  } else if (effEnd) {
+    const terminee = effEnd < today;
     statusEl.textContent = terminee ? 'Terminée' : 'En cours';
     statusEl.className = `status-pill ${terminee ? 'pill-terminee' : 'pill-en_cours'}`;
   } else {
@@ -2101,71 +2212,144 @@ function updateBadges() {
     statusEl.className = 'status-pill';
   }
 
-  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || null;
+  // Le résumé (dates, TJM actuel, taux d'activité, marge, dernière modification) ne s'affiche
+  // que pour une prestation verrouillée (existe déjà, ou vient d'une opportunité) : à la création
+  // directe, rien à résumer par définition — on ne sait pas encore ce qui sera fait de la mission.
+  const locked = !!document.getElementById('f-id').value || !!document.getElementById('f-opportunite-id').value;
 
-  // Taux de marge hebdo = (TJM − coût complet du consultant) / TJM. Le taux d'activité (jours/
-  // semaine) n'entre pas dans le calcul : il multiplie recette ET coût de la même façon, un
-  // TAUX (contrairement à un montant) reste donc le même quel que soit le temps de présence.
+  const startDate = document.getElementById('f-start').value;
+  document.getElementById('mission-dates-display').textContent =
+    locked && startDate && effEnd ? `${fmtD(startDate)} → ${fmtD(effEnd)}` : '';
+
+  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || null;
+  const baseFte = parseInt(document.getElementById('f-fte').value)   || null;
+  const tjmRevs = modalRevisions.filter(r => r.tjm !== undefined);
+  const fteRevs = modalRevisions.filter(r => r.fte !== undefined);
+  // TJM/taux d'activité "en cours" : dernière révision connue, sinon la valeur de départ — même
+  // valeur que la 1re/dernière ligne de la table de tarification (renderRevisions()).
+  const curTjm = tjmRevs.length ? tjmRevs[tjmRevs.length - 1].tjm : baseTjm;
+  const curFte = fteRevs.length ? fteRevs[fteRevs.length - 1].fte : baseFte;
+
+  // Taux de marge hebdo = (TJM − coût complet du consultant) / TJM, sur le TJM en cours (pas la
+  // valeur de départ). Le taux d'activité (jours/semaine) n'entre pas dans le calcul : il
+  // multiplie recette ET coût de la même façon, un TAUX (contrairement à un montant) reste donc
+  // le même quel que soit le temps de présence.
   const margeEl = document.getElementById('marge-hebdo-display');
   const consultant = S.consultants.find(c => c.id === document.getElementById('f-cons').value);
   const cout = consultant ? currentCoutComplet(consultant, todayStr()) : 0;
-  if (baseTjm && cout > 0) {
-    const margePct = Math.round((baseTjm - cout) / baseTjm * 100);
+  if (locked && curTjm && cout > 0) {
+    const margePct = Math.round((curTjm - cout) / curTjm * 100);
     const color = margePct >= 20 ? 'var(--green)' : margePct >= 10 ? 'var(--yellow)' : 'var(--red)';
     margeEl.innerHTML = `Taux de marge hebdo : <strong style="color:${color}">${margePct}%</strong>`;
   } else {
     margeEl.textContent = '';
   }
 
-  const disp = document.getElementById('current-tjm-display');
-  if (modalRevisions.length && baseTjm) {
-    const last = modalRevisions[modalRevisions.length - 1];
-    const diff = last.tjm - baseTjm;
-    disp.innerHTML = `TJM actuel : <strong style="color:var(--accent)">${last.tjm.toLocaleString('fr-FR')} €/j</strong> <span style="color:${diff>=0?'var(--green)':'var(--red)'};">(${diff>=0?'+':''}${diff} €)</span>`;
+  const tjmDisp = document.getElementById('current-tjm-display');
+  if (locked && curTjm) {
+    const diff = tjmRevs.length && baseTjm ? curTjm - baseTjm : null;
+    tjmDisp.innerHTML = `TJM actuel : <strong style="color:var(--accent)">${curTjm.toLocaleString('fr-FR')} €/j</strong>` +
+      (diff !== null ? ` <span style="color:${diff>=0?'var(--green)':'var(--red)'};">(${diff>=0?'+':''}${diff} €)</span>` : '');
   } else {
-    disp.textContent = '';
+    tjmDisp.textContent = '';
+  }
+
+  document.getElementById('current-fte-display').textContent =
+    locked && curFte ? `Taux d'activité actuel : ${curFte}/5` : '';
+
+  // Dernière modification de mission enregistrée (n'importe quel type), s'il y en a une —
+  // uniquement la plus récente par date d'effet, pas tout l'historique (déjà dans la table
+  // "Modification de la mission" plus bas).
+  const lastEvtDisp = document.getElementById('last-mission-event-display');
+  if (locked && modalMissionEvents.length) {
+    const last = modalMissionEvents[modalMissionEvents.length - 1];
+    const label = MISSION_EVENT_LABELS[last.type] || last.type;
+    lastEvtDisp.textContent = `Dernière modification : ${label} · ${fmtD(last.date)}${last.resumeDate ? ` → reprise ${fmtD(last.resumeDate)}` : ''}`;
+  } else {
+    lastEvtDisp.textContent = '';
   }
 }
 
+// Une révision porte un TJM et/ou un taux d'activité (au moins un des deux) + une date. Si une
+// entrée existe déjà à cette date, on la complète plutôt que de l'écraser (ex: TJM ajouté un
+// jour, taux d'activité ajouté le même jour plus tard — les deux doivent survivre ensemble).
 function addRevision() {
-  const date = document.getElementById('rev-date').value;
-  const tjm  = parseFloat(document.getElementById('rev-tjm').value);
+  const date   = document.getElementById('rev-date').value;
+  const tjmVal = document.getElementById('rev-tjm').value;
+  const fteVal = document.getElementById('rev-fte').value;
+  const tjm = tjmVal ? parseFloat(tjmVal) : undefined;
+  const fte = fteVal ? parseInt(fteVal)   : undefined;
   if (!date) { showToast('Saisissez une date de mise en place', 'error'); return; }
-  if (!tjm)  { showToast('Saisissez un TJM', 'error'); return; }
-  modalRevisions = modalRevisions.filter(r => r.date !== date);
-  modalRevisions.push({ date, tjm });
-  modalRevisions.sort((a,b) => a.date.localeCompare(b.date));
+  if (tjm === undefined && fte === undefined) { showToast('Saisissez un TJM ou un taux d\'activité', 'error'); return; }
+  const existing = modalRevisions.find(r => r.date === date);
+  if (existing) {
+    if (tjm !== undefined) existing.tjm = tjm;
+    if (fte !== undefined) existing.fte = fte;
+  } else {
+    modalRevisions.push({ date, ...(tjm !== undefined ? {tjm} : {}), ...(fte !== undefined ? {fte} : {}) });
+    modalRevisions.sort((a,b) => a.date.localeCompare(b.date));
+  }
   document.getElementById('rev-date').value = '';
   document.getElementById('rev-tjm').value  = '';
+  document.getElementById('rev-fte').value  = '';
   renderRevisions();
   updateBadges();
 }
 
 function removeRevision(date) {
-  if (!confirm('Supprimer cette révision du TJM ?')) return;
+  if (!confirm('Supprimer cette révision ?')) return;
   modalRevisions = modalRevisions.filter(r => r.date !== date);
   renderRevisions();
   updateBadges();
 }
 
+// Table tarification = un instantané complet par ligne (valeurs de départ + chaque révision),
+// pas seulement ce qui a changé ce jour-là : une ligne "taux d'activité seul" reprend quand même
+// le dernier TJM connu, pour que chaque colonne soit toujours lisible. Couleurs alignées sur les
+// tags du haut de modale (TJM en accent, marge au même code vert/jaune/rouge).
 function renderRevisions() {
-  const el = document.getElementById('revision-list');
-  el.innerHTML = '';
-  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || 0;
-  if (!modalRevisions.length) {
-    el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px 0 10px">Aucune révision — le TJM de départ s'applique.</div>`;
+  const tbody = document.getElementById('tarif-table-body');
+  tbody.innerHTML = '';
+  const baseTjm    = parseFloat(document.getElementById('f-tjm').value) || undefined;
+  const baseFte    = parseInt(document.getElementById('f-fte').value)   || undefined;
+  const startDate  = document.getElementById('f-start').value;
+  const consultant = S.consultants.find(c => c.id === document.getElementById('f-cons').value);
+
+  if (!startDate) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);padding:6px 0;white-space:normal">Renseignez une date de début pour voir la tarification.</td></tr>`;
     return;
   }
-  modalRevisions.forEach((r, i) => {
-    const prev = i === 0 ? baseTjm : modalRevisions[i-1].tjm;
-    const diff = r.tjm - prev;
-    el.innerHTML += `
-      <div class="revision-item">
-        <span class="revision-date">${fmtD(r.date)}</span>
-        <span class="revision-tjm">${r.tjm.toLocaleString('fr-FR')} €/j</span>
-        ${prev ? `<span class="revision-delta ${diff>=0?'delta-up':'delta-down'}">${diff>=0?'+':''}${diff} €</span>` : ''}
-        <button class="btn-icon" onclick="removeRevision('${r.date}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button>
-      </div>`;
+
+  const rows = [{ date: startDate, tjm: baseTjm, fte: baseFte, base: true }, ...modalRevisions];
+  let curTjm, curFte, prevTjm;
+  rows.forEach(r => {
+    if (r.tjm !== undefined) curTjm = r.tjm;
+    if (r.fte !== undefined) curFte = r.fte;
+
+    const cout = consultant ? currentCoutComplet(consultant, r.date) : 0;
+    let margeHtml = '—';
+    if (curTjm && cout > 0) {
+      const pct = Math.round((curTjm - cout) / curTjm * 100);
+      const color = pct >= 20 ? 'var(--green)' : pct >= 10 ? 'var(--yellow)' : 'var(--red)';
+      margeHtml = `<span style="color:${color}">${pct}%</span>`;
+    }
+
+    let trendHtml = '<span style="color:var(--text-muted)">≈</span>';
+    if (prevTjm !== undefined && curTjm !== undefined) {
+      if (curTjm > prevTjm) trendHtml = '<span style="color:var(--green)">↑</span>';
+      else if (curTjm < prevTjm) trendHtml = '<span style="color:var(--red)">↓</span>';
+    }
+
+    tbody.innerHTML += `
+      <tr>
+        <td><strong style="color:var(--accent)">${curTjm !== undefined ? curTjm.toLocaleString('fr-FR')+' €/j' : '—'}</strong></td>
+        <td>${curFte !== undefined ? curFte+'/5' : '—'}</td>
+        <td>${r.base ? 'Mise en place · ' : ''}${fmtD(r.date)}</td>
+        <td>${margeHtml}</td>
+        <td>${trendHtml}</td>
+        <td>${r.base ? '' : `<button class="btn-icon" onclick="removeRevision('${r.date}')" title="Supprimer" style="width:22px;height:22px;font-size:12px">×</button>`}</td>
+      </tr>`;
+    prevTjm = curTjm;
   });
 }
 
@@ -2176,11 +2360,11 @@ function savePrestation() {
   const clientService= document.getElementById('f-service').value.trim();
   const startDate    = document.getElementById('f-start').value;
   const endDate      = document.getElementById('f-end').value;
-  const extDate      = document.getElementById('f-ext-date').value;
-  const exitDate     = document.getElementById('f-exit-date').value;
   const tjm          = parseFloat(document.getElementById('f-tjm').value) || 0;
   const fte          = parseInt(document.getElementById('f-fte').value) || 5;
+  const limiteUOAn   = parseInt(document.getElementById('f-uo').value) || undefined;
   const nature       = document.getElementById('f-nature').value;
+  const titre        = document.getElementById('f-titre').value.trim();
   const notes        = document.getElementById('f-notes').value.trim();
 
   clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-cons', 'f-nature']);
@@ -2194,22 +2378,20 @@ function savePrestation() {
   // obligatoire ici si elle n'a pas déjà été reprise de l'opportunité d'origine.
   if (!nature) missing.push('f-nature');
   if (missing.length) {
-    missing.forEach(markFieldInvalid);
+    missing.forEach(id => markFieldInvalid(id, 'Ce champ est obligatoire.'));
     showToast('Merci de compléter les champs obligatoires en surbrillance', 'error');
     document.getElementById(missing[0]).focus();
     return false;
   }
-  if (endDate < startDate) { markFieldInvalid('f-end'); showToast('La date de fin doit être après la date de début', 'error'); document.getElementById('f-end').focus(); return false; }
-  if (extActive && exitActive) { showToast('Prolongation et sortie anticipée sont mutuellement exclusives', 'error'); return false; }
+  if (endDate < startDate) { markFieldInvalid('f-end', 'La date de fin doit être après la date de début.'); showToast('La date de fin doit être après la date de début', 'error'); document.getElementById('f-end').focus(); return false; }
 
   const opportuniteId = document.getElementById('f-opportunite-id').value || undefined;
 
   const prest = {
     id: id || genId(),
     consultantId, client, clientService, startDate, endDate,
-    extension:  { active: extActive,  date: extDate  || '' },
-    earlyExit:  { active: exitActive, date: exitDate || '' },
-    tjm, fte, nature, tjmRevisions: modalRevisions,
+    missionEvents: modalMissionEvents,
+    tjm, fte, limiteUOAn, nature, titre, tjmRevisions: modalRevisions,
     notes, opportuniteId,
   };
 
@@ -2374,6 +2556,7 @@ function openOpportuniteModal(opp, prefillClient) {
     document.getElementById('of-nature').value  = opp.nature || '';
     document.getElementById('of-tjm').value     = opp.tjm || '';
     document.getElementById('of-fte').value     = opp.fte || '';
+    document.getElementById('of-uo').value      = opp.limiteUOAn || '';
     document.getElementById('of-status').value  = opp.status || 'ouvert';
     createdLine.hidden = !opp.createdAt;
     createdLine.textContent = opp.createdAt ? `Créée le ${fmtD(opp.createdAt)}` : '';
@@ -2390,11 +2573,30 @@ function openOpportuniteModal(opp, prefillClient) {
     document.getElementById('of-nature').value  = '';
     document.getElementById('of-tjm').value     = '';
     document.getElementById('of-fte').value     = '';
+    document.getElementById('of-uo').value      = '';
     document.getElementById('of-status').value  = 'ouvert';
     createdLine.hidden = true; // rien à afficher tant qu'elle n'a jamais été enregistrée
     modalCandidatures = [];
   }
   renderOpportuniteCandidatures();
+  oppModalSnapshot = oppFormState();
+}
+
+// Capture l'état courant du formulaire Opportunité (champs + candidatures), pour détecter une
+// saisie non enregistrée avant de fermer la modale sans confirmation (cancelOpportuniteModal()).
+function oppFormState() {
+  const data = {};
+  document.querySelectorAll('#opportunite-modal-box input, #opportunite-modal-box select, #opportunite-modal-box textarea')
+    .forEach(el => { if (el.id) data[el.id] = el.value; });
+  data._candidatures = modalCandidatures;
+  return JSON.stringify(data);
+}
+
+function cancelOpportuniteModal() {
+  if (oppFormState() !== oppModalSnapshot) {
+    if (!confirm('Des modifications non enregistrées seront perdues. Annuler quand même ?')) return;
+  }
+  closeModal('opportunite-overlay');
 }
 
 // Écrit l'état courant du formulaire + modalCandidatures dans S, sans fermer la modale.
@@ -2409,19 +2611,20 @@ function commitOpportuniteFromForm() {
   const nature        = document.getElementById('of-nature').value;
   const tjm           = parseFloat(document.getElementById('of-tjm').value) || undefined;
   const fte           = parseInt(document.getElementById('of-fte').value) || undefined;
+  const limiteUOAn    = parseInt(document.getElementById('of-uo').value) || undefined;
   const status        = document.getElementById('of-status').value;
 
   clearFieldErrors(['of-client', 'of-start', 'of-end']);
   const missing = [];
   if (!client) missing.push('of-client');
   if (missing.length) {
-    missing.forEach(markFieldInvalid);
+    missing.forEach(id => markFieldInvalid(id, 'Ce champ est obligatoire.'));
     showToast('Merci de compléter les champs obligatoires en surbrillance', 'error');
     document.getElementById(missing[0]).focus();
     return null;
   }
   if (startDate && endDate && endDate < startDate) {
-    markFieldInvalid('of-end');
+    markFieldInvalid('of-end', 'La date de fin prévue doit être après la date de début.');
     showToast('La date de fin prévue doit être après la date de début prévue', 'error');
     document.getElementById('of-end').focus();
     return null;
@@ -2431,7 +2634,27 @@ function commitOpportuniteFromForm() {
   // createdAt : horodatage immuable, réglé une seule fois — jamais réécrit en édition.
   const existing = id ? S.opportunites.find(o => o.id === id) : null;
   const createdAt = existing ? existing.createdAt : new Date().toISOString().slice(0,10);
-  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, createdAt, status };
+
+  // Remplace toutes les candidatures de cette opportunité par l'état courant du buffer —
+  // les lignes sans consultant choisi (brouillon abandonné) sont ignorées.
+  const kept = modalCandidatures.filter(c => c.consultantId);
+
+  // Dès qu'il y a au moins une candidature, le statut de l'opportunité se déduit de leur
+  // composition plutôt que de se déclarer à la main (simplification volontaire — la nuance
+  // "perdue par le consultant" vs "perdue par le client" est mise de côté pour l'instant, voir
+  // BACKLOG.md) : une candidature gagnée suffit à la rendre gagnée ; toutes perdues la rendent
+  // perdue ; dès qu'une candidature active (en attente) existe à nouveau, elle redevient
+  // ouverte automatiquement — pas besoin de repasser le statut à la main après un nouvel ajout.
+  // Sans aucune candidature, le champ Statut du formulaire reste la seule source (ex : une
+  // opportunité abandonnée avant même qu'un candidat n'ait été proposé).
+  let finalStatus = status;
+  if (kept.length > 0) {
+    if (kept.some(c => c.status === 'gagnee')) finalStatus = 'pourvu';
+    else if (kept.every(c => c.status === 'perdue')) finalStatus = 'abandonne';
+    else finalStatus = 'ouvert';
+  }
+
+  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, limiteUOAn, createdAt, status: finalStatus };
   if (id) {
     const i = S.opportunites.findIndex(o => o.id === id);
     if (i >= 0) S.opportunites[i] = opp;
@@ -2439,9 +2662,6 @@ function commitOpportuniteFromForm() {
     S.opportunites.push(opp);
   }
 
-  // Remplace toutes les candidatures de cette opportunité par l'état courant du buffer —
-  // les lignes sans consultant choisi (brouillon abandonné) sont ignorées.
-  const kept = modalCandidatures.filter(c => c.consultantId);
   S.candidatures = S.candidatures.filter(c => c.opportuniteId !== oppId)
     .concat(kept.map(c => ({ ...c, opportuniteId: oppId })));
 
@@ -2645,14 +2865,22 @@ function markCandidatureWonInModal(candId) {
   if (opp.startDate) document.getElementById('f-start').value  = opp.startDate;
   if (opp.endDate)   document.getElementById('f-end').value    = opp.endDate;
   if (opp.nature)    document.getElementById('f-nature').value = opp.nature;
+  if (opp.titre)     document.getElementById('f-titre').value  = opp.titre;
   if (opp.tjm)       document.getElementById('f-tjm').value    = opp.tjm;
   if (opp.fte)       document.getElementById('f-fte').value    = opp.fte;
+  if (opp.limiteUOAn) document.getElementById('f-uo').value    = opp.limiteUOAn;
   document.getElementById('f-opportunite-id').value = opp.id;
   showOriginBannerLinked();
+  // f-opportunite-id vient d'être renseigné : on relance le verrouillage (openPrestModal() l'a
+  // déjà fait, mais avant que cet id ne soit connu — il voyait encore une création "directe").
+  updateLockedSections();
   // Les préremplissages ci-dessus (dates, TJM...) arrivent après le updateBadges() déjà
   // exécuté en fin d'openPrestModal() — on le relance pour que statut/marge/TJM actuel
   // reflètent bien ces valeurs dès l'ouverture, pas seulement après une saisie manuelle.
   updateBadges();
+  // Idem pour l'instantané anti-perte de données (cancelPrestModal()) : capturé une 2e fois
+  // ici, sinon les préremplissages ci-dessus seraient vus comme une modification de l'utilisateur.
+  prestModalSnapshot = prestFormState();
 }
 
 function editMissionFromOpportunite(prestId) {
@@ -2679,23 +2907,40 @@ function setViewMode(v) {
 
 // ─── MODAL UTILS ─────────────────────────────────────────────────────────────
 // Signalement accessible des champs obligatoires manquants : surbrillance visuelle
-// (.field-invalid) + aria-invalid pour les lecteurs d'écran, en plus du toast.
-function markFieldInvalid(id) {
+// (.field-invalid) + aria-invalid pour les lecteurs d'écran + texte inline (#err-<id>,
+// affiché sous l'aide utilisateur du champ), en plus du toast.
+function markFieldInvalid(id, message) {
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.add('field-invalid');
   el.setAttribute('aria-invalid', 'true');
+  const err = document.getElementById('err-' + id);
+  if (err) {
+    err.textContent = message || 'Ce champ est invalide.';
+    err.classList.add('visible');
+  }
 }
 function clearFieldErrors(ids) {
   ids.forEach(id => {
     const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('field-invalid');
-    el.removeAttribute('aria-invalid');
+    if (el) {
+      el.classList.remove('field-invalid');
+      el.removeAttribute('aria-invalid');
+    }
+    const err = document.getElementById('err-' + id);
+    if (err) {
+      err.textContent = '';
+      err.classList.remove('visible');
+    }
   });
 }
 function closeModal(overlayId) { document.getElementById(overlayId).classList.remove('open'); }
-function overlayClick(e, id) { if (e.target.id === id) closeModal(id); }
+function overlayClick(e, id) {
+  if (e.target.id !== id) return;
+  if (id === 'prest-overlay') { cancelPrestModal(); return; }
+  if (id === 'opportunite-overlay') { cancelOpportuniteModal(); return; }
+  closeModal(id);
+}
 
 // ─── CHART TOOLTIP (au clic) ─────────────────────────────────────────────────
 function showPointTooltip(anchorEl, html) {

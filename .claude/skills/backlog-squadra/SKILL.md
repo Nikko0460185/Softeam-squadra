@@ -21,6 +21,10 @@ Deux sections fixes :
 - [x] **Titre court** — description en une phrase.
 ```
 
+## Règle systématique — demander avant d'invoquer
+
+Ne jamais invoquer ce skill pour ajouter un item sans confirmation explicite déjà obtenue dans la conversation. Ça inclut le cas où c'est Claude lui-même qui repère en cours de travail une limite/dette/idée qui mériterait le backlog (ex: une fonctionnalité laissée incomplète, un écart constaté) : poser la question en clair dans le fil ("je note ça au backlog ?") et attendre un "oui" avant d'invoquer le skill — jamais l'inverse (invoquer puis demander, ou invoquer directement). Même logique que pour un `git push` : une confirmation par action, jamais présumée à partir d'un accord précédent.
+
 ## Actions
 
 **Ajouter un item** — uniquement quand l'utilisateur le demande explicitement (ne jamais ajouter un sujet de sa propre initiative, même s'il semble pertinent pendant une conversation). Ajouter une ligne sous `## À faire`, au format `- [ ] **Titre court** — description`. Ne jamais reformuler ou modifier les items déjà présents.

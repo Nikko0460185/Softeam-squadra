@@ -67,6 +67,7 @@
 .prest-bar:hover { filter: brightness(1.2); transform: translateY(-1px); z-index: 5; }
 
 .bar-en_cours    { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+.bar-en_pause    { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
 .bar-terminee    { background: rgba(100,116,139,.15); border-color: #475569; color: #94a3b8; }
 /* Barre spéculative (opportunité/candidature encore en attente, main.js pipelineItemFrom*()) —
    violet + pointillé, seul mécanisme "pas encore confirmé" restant côté Gantt. */
@@ -78,6 +79,7 @@
   font-size: 10px; font-weight: 600; opacity: .7; min-width: 4px;
 }
 .ext-bar-en_cours    { border-color: var(--green); color: var(--green); background: rgba(34,197,94,.06); }
+.ext-bar-en_pause    { border-color: var(--blue); color: var(--blue); background: rgba(59,130,246,.06); }
 .ext-bar-terminee    { border-color: #475569; color: #94a3b8; background: rgba(71,85,105,.08); }
 
 .exit-bar {
@@ -90,5 +92,6 @@
 
 .bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .bar-en_cours .bar-dot    { background: var(--green); }
+.bar-en_pause .bar-dot    { background: var(--blue); }
 .bar-terminee .bar-dot    { background: #475569; }
 .bar-pipeline .bar-dot    { background: var(--purple); }

@@ -14,3 +14,13 @@
 
 .add-revision-row { display: flex; gap: 8px; margin-top: 10px; align-items: flex-end; }
 .add-revision-row .form-input { flex: 1; }
+
+/* Tableau tarification (main.js renderRevisions()) : une ligne = un instantané complet (TJM,
+   taux d'activité, marge, tendance) à une date donnée, pas seulement ce qui a changé ce jour-là. */
+.tarif-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tarif-table th {
+  text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .02em; padding: 0 10px 8px 0; border-bottom: 1px solid var(--border);
+}
+.tarif-table td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tarif-table tr:last-child td { border-bottom: none; }

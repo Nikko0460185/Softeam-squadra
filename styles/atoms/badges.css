@@ -3,6 +3,7 @@
   font-size: 11px; font-weight: 600; flex-shrink: 0; display: inline-block; text-align: center;
 }
 .pill-en_cours    { background: var(--green-soft); color: var(--green); }
+.pill-en_pause    { background: var(--blue-soft); color: var(--blue); }
 .pill-terminee    { background: rgba(100,116,139,.15); color: #94a3b8; }
 .pill-arrivee     { background: var(--orange-soft); color: var(--orange); }
 .pill-sortie      { background: var(--red-soft); color: var(--red); }

@@ -158,44 +158,63 @@
   <div class="modal-box" id="prest-modal-box">
     <div class="modal-header">
       <h2 id="prest-modal-title">Nouvelle prestation</h2>
-      <button class="btn-icon" onclick="closeModal('prest-overlay')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="f-id" />
       <input type="hidden" id="f-opportunite-id" />
 
-      <!-- Position 1 : statut (calculé, voir prestationStatus() dans main.js) à gauche, lien
-           vers l'opportunité d'origine à droite — mis à jour en direct via updateBadges(). -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <!-- Position 1 : statut + résumé en tête, mis à jour en direct via updateBadges(). Le
+           résumé (dates, TJM actuel, marge, dernière modification) ne s'affiche que pour une
+           prestation déjà verrouillée (existe déjà, ou vient d'une opportunité) — à la création
+           directe, rien à résumer par définition, seul le statut s'affiche. -->
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
         <span class="status-pill" id="f-status-display"></span>
-        <div class="modal-info-banner" id="prest-origin-banner" style="display:none;flex:1;margin:0">
-          <span>Issue d'une opportunité</span>
-          <button type="button" class="btn-add-small" onclick="viewOriginOpportunite()">Voir l'opportunité d'origine</button>
-        </div>
+        <div id="mission-dates-display" style="font-size:12px;color:var(--text-muted)"></div>
+        <div id="current-tjm-display" style="font-size:12px;color:var(--text-muted)"></div>
+        <div id="current-fte-display" style="font-size:12px;color:var(--text-muted)"></div>
+        <div id="marge-hebdo-display" style="font-size:12px;color:var(--text-muted)"></div>
+        <div id="last-mission-event-display" style="font-size:12px;color:var(--text-muted)"></div>
+      </div>
+      <div class="modal-info-banner" id="prest-origin-banner" style="display:none;margin:0 0 16px">
+        <span>Issue d'une opportunité</span>
+        <button type="button" class="btn-add-small" onclick="viewOriginOpportunite()">Voir l'opportunité d'origine</button>
       </div>
 
-      <!-- Position 2 : modalités de la prestation -->
+      <!-- Position 2 : modalités de la prestation — tout ce qui définit la mission elle-même
+           (contrat, client, dates, contraintes, qui est staffé). Tarification et Mission
+           (prolongation/sortie) sont des espaces à part, en positions 3 et 4. -->
       <div class="section-title" style="margin-bottom:8px">Modalités de la prestation</div>
-      <div class="form-group">
-        <label class="form-label">Nature <span class="req">(obligatoire)</span></label>
-        <select class="form-select" id="f-nature">
-          <option value="">— Choisir —</option>
-          <option value="mission">Mission (régie)</option>
-          <option value="forfait">Forfait</option>
-          <option value="projet_interne">Projet interne</option>
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nature</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Type de contrat avec le client.</div>
+          <div class="form-error" id="err-f-nature"></div>
+          <select class="form-select" id="f-nature">
+            <option value="">— Choisir —</option>
+            <option value="mission">Mission (régie)</option>
+            <option value="forfait">Forfait</option>
+            <option value="projet_interne">Projet interne</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Titre du profil</label>
+          <div class="form-help">Intitulé du poste occupé sur cette mission.</div>
+          <input type="text" class="form-input" id="f-titre" placeholder="Intitulé du poste" />
+        </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Client <span class="req">(obligatoire)</span></label>
-          <input type="text" class="form-input" id="f-client" placeholder="Société Générale" />
+          <label class="form-label">Client</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
+          <div class="form-error" id="err-f-client"></div>
+          <input type="text" class="form-input" id="f-client" placeholder="Nom du client" />
         </div>
         <div class="form-group">
-          <label class="form-label">Service client <span class="opt">(optionnel)</span></label>
-          <input type="text" class="form-input" id="f-service" placeholder="DSI — Pôle Data" />
+          <label class="form-label">Service client</label>
+          <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
+          <div class="form-error" id="err-f-service"></div>
+          <input type="text" class="form-input" id="f-service" placeholder="Service ou pôle" />
         </div>
       </div>
 
@@ -203,87 +222,161 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Date de début <span class="req">(obligatoire)</span></label>
+          <label class="form-label">Date de début</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Date de démarrage de la mission.</div>
+          <div class="form-error" id="err-f-start"></div>
           <input type="date" class="form-input" id="f-start" oninput="updateBadges()" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de fin prévue <span class="req">(obligatoire)</span></label>
+          <label class="form-label">Date de fin prévue</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Peut être prolongée plus bas sans changer cette date.</div>
+          <div class="form-error" id="err-f-end"></div>
           <input type="date" class="form-input" id="f-end" oninput="updateBadges()" />
         </div>
       </div>
 
-      <!-- PROLONGATION -->
-      <div class="toggle-option" id="ext-toggle-wrap">
-        <div class="toggle-header" id="ext-toggle-header" onclick="toggleOption('ext')">
-          <div class="toggle-check" id="ext-check"></div>
-          <span class="toggle-label">Prolongation</span>
-          <span class="toggle-badge" id="ext-badge">désactivée</span>
-        </div>
-        <div class="toggle-body" id="ext-body">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Nouvelle date de fin</label>
-            <input type="date" class="form-input" id="f-ext-date" oninput="updateBadges()" />
-          </div>
-        </div>
-      </div>
-
-      <!-- SORTIE ANTICIPÉE -->
-      <div class="toggle-option" id="exit-toggle-wrap" style="margin-top:8px">
-        <div class="toggle-header" id="exit-toggle-header" onclick="toggleOption('exit')">
-          <div class="toggle-check" id="exit-check"></div>
-          <span class="toggle-label">Sortie anticipée</span>
-          <span class="toggle-badge" id="exit-badge">désactivée</span>
-        </div>
-        <div class="toggle-body" id="exit-body">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Date de sortie</label>
-            <input type="date" class="form-input" id="f-exit-date" oninput="updateBadges()" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Position 3 : consultant + tout ce qui concerne son tarif sur cette prestation,
-           groupés ensemble — propre à la prestation (une opportunité n'a pas encore de TJM),
-           donc pas mélangé avec les modalités en position 2. -->
-      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Consultant & tarification</div>
-      <div class="form-group">
-        <label class="form-label">Consultant <span class="req">(obligatoire)</span></label>
-        <select class="form-select" id="f-cons" onchange="updateBadges()"></select>
-      </div>
-
-      <div class="form-row-4">
+      <div class="form-row">
         <div class="form-group">
-          <label class="form-label">TJM initial (€/j) <span class="req">(obligatoire)</span></label>
-          <input type="number" class="form-input" id="f-tjm" placeholder="650" min="0" oninput="updateBadges()" />
+          <label class="form-label">Limite d'UO / an (j)</label>
+          <div class="form-help">Plafond annuel de jours facturables.</div>
+          <div class="form-error" id="err-f-uo"></div>
+          <input type="number" class="form-input" id="f-uo" placeholder="Nombre de jours par an" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label">Taux d'activité <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Consultant</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Consultant affecté à cette prestation.</div>
+          <div class="form-error" id="err-f-cons"></div>
+          <select class="form-select" id="f-cons" onchange="updateBadges()"></select>
+        </div>
+      </div>
+
+      <!-- Position 3 : tarification. TJM initial / Taux d'activité (#tjm-fte-row) ne sont des
+           champs de définition qu'à la création directe (obligatoires) — voir
+           updateTjmFieldsLock() dans main.js. Dès que la prestation existe déjà ou vient d'une
+           opportunité, ils sont masqués et remplacés par #tarif-history-block (table en lecture
+           seule + bouton "Modifier la tarification") : les deux blocs sont mutuellement
+           exclusifs, jamais affichés en même temps. -->
+      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</div>
+
+      <div class="form-row" id="tjm-fte-row">
+        <div class="form-group">
+          <label class="form-label">TJM initial (€/j)</label>
+          <div class="form-help" id="help-f-tjm"><span class="req">(obligatoire)</span> Taux journalier moyen facturé au client.</div>
+          <div class="form-error" id="err-f-tjm"></div>
+          <input type="number" class="form-input" id="f-tjm" placeholder="Montant en €/jour" min="0" oninput="updateBadges()" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Taux d'activité</label>
+          <div class="form-help" id="help-f-fte">Part du temps consacrée à cette mission (5/5 = temps plein).</div>
+          <div class="form-error" id="err-f-fte"></div>
           <select class="form-select" id="f-fte" onchange="updateBadges()">
             <option value="5">5/5 — Plein temps</option>
             <option value="4">4/5 — Partiel</option>
             <option value="3">3/5 — Partiel</option>
           </select>
         </div>
-        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
-          <div id="marge-hebdo-display" style="font-size:12px;color:var(--text-muted);padding-bottom:4px"></div>
+      </div>
+
+      <div id="tarif-history-block" style="display:none">
+        <div class="form-help" style="margin-bottom:10px">TJM et taux d'activité appliqués depuis le début de la mission.</div>
+        <div style="overflow-x:auto">
+          <table class="tarif-table" id="tarif-table">
+            <thead>
+              <tr>
+                <th>TJM</th>
+                <th>Taux d'activité</th>
+                <th>Date de mise en place</th>
+                <th>Marge hebdo</th>
+                <th>Tendance</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tarif-table-body"></tbody>
+          </table>
         </div>
-        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
-          <div id="current-tjm-display" style="font-size:12px;color:var(--text-muted);padding-bottom:4px"></div>
+
+        <div class="form-group" style="margin-top:14px">
+          <button type="button" class="btn-add-small" onclick="toggleTarifEdit()">Modifier la tarification</button>
+        </div>
+
+        <div id="tarif-edit-section" style="display:none">
+          <div class="add-revision-row" style="margin-top:4px">
+            <div style="flex:1">
+              <label class="form-label">TJM (€/j)</label>
+              <div class="form-help">Laisser vide si seul le taux d'activité change.</div>
+              <input type="number" class="form-input" id="rev-tjm" placeholder="Montant en €/jour" min="0" />
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Taux d'activité</label>
+              <div class="form-help">Laisser sur "Inchangé" si seul le TJM change.</div>
+              <select class="form-select" id="rev-fte">
+                <option value="">Inchangé</option>
+                <option value="5">5/5 — Plein temps</option>
+                <option value="4">4/5 — Partiel</option>
+                <option value="3">3/5 — Partiel</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Date de mise en place</label>
+              <div class="form-help">À partir de quand ce changement s'applique.</div>
+              <input type="date" class="form-input" id="rev-date" />
+            </div>
+            <button class="btn-add-small" onclick="addRevision()">+ Ajouter</button>
+          </div>
         </div>
       </div>
 
-      <div class="form-label" style="margin-bottom:8px">Révisions TJM <span class="opt" style="font-weight:400">(date de mise en place + nouveau taux)</span></div>
-      <div class="revision-list" id="revision-list"></div>
-      <div class="add-revision-row">
-        <div style="flex:1">
-          <div class="form-label" style="font-size:11px;margin-bottom:4px">Date de mise en place</div>
-          <input type="date" class="form-input" id="rev-date" />
+      <!-- Position 4 : modification de la mission — même structure que Tarification (position 3) :
+           historique en lecture seule + bouton, masqué à la création directe (rien à modifier
+           avant que la prestation existe). Une "modification" = un type (prolongation / pause /
+           sortie anticipée) + une date d'effet — plusieurs entrées possibles dans le temps,
+           comme les révisions TJM (voir p.missionEvents, main.js). -->
+      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Modification de la mission</div>
+
+      <div id="mission-history-block" style="display:none">
+        <div class="form-help" style="margin-bottom:10px">Prolongations, pauses et sorties anticipées appliquées depuis le début de la mission.</div>
+        <div style="overflow-x:auto">
+          <table class="tarif-table" id="mission-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Date d'effet</th>
+                <th>Reprise</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mission-table-body"></tbody>
+          </table>
         </div>
-        <div style="flex:1">
-          <div class="form-label" style="font-size:11px;margin-bottom:4px">Nouveau TJM (€/j)</div>
-          <input type="number" class="form-input" id="rev-tjm" placeholder="700" min="0" />
+
+        <div class="form-group" style="margin-top:14px">
+          <button type="button" class="btn-add-small" onclick="toggleMissionEdit()">Modifier la mission</button>
         </div>
-        <button class="btn-add-small" onclick="addRevision()">+ Ajouter</button>
+
+        <div id="mission-edit-section" style="display:none">
+          <div class="add-revision-row" style="margin-top:4px">
+            <div style="flex:1">
+              <label class="form-label">Type</label>
+              <div class="form-help">Nature de la modification.</div>
+              <select class="form-select" id="ev-type" onchange="updateEvTypeUI()">
+                <option value="prolongation">Prolongation</option>
+                <option value="pause">Pause</option>
+                <option value="sortie_anticipee">Sortie anticipée</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <label class="form-label">Date d'effet</label>
+              <div class="form-help">À partir de quand ce changement s'applique.</div>
+              <input type="date" class="form-input" id="ev-date" />
+            </div>
+            <div style="flex:1" id="ev-resume-wrap">
+              <label class="form-label">Date de reprise</label>
+              <div class="form-help">Pause uniquement — laisser vide si pas encore connue.</div>
+              <input type="date" class="form-input" id="ev-resume" />
+            </div>
+            <button class="btn-add-small" onclick="addMissionEvent()">+ Ajouter</button>
+          </div>
+        </div>
       </div>
 
       <!-- Notes vraiment en dernier -->
@@ -294,7 +387,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn-danger" id="btn-del-prest" onclick="deletePrestation()" style="display:none">Supprimer</button>
-      <button class="btn-secondary" onclick="closeModal('prest-overlay')">Annuler</button>
+      <button class="btn-secondary" onclick="cancelPrestModal()">Annuler</button>
       <button class="btn-primary" onclick="savePrestation()">Enregistrer</button>
     </div>
   </div>
@@ -330,7 +423,7 @@
           <input type="date" class="form-input" id="cf-date-entree" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de sortie <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Date de sortie</label>
           <input type="date" class="form-input" id="cf-date-sortie" />
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Laisser vide si toujours en poste</div>
         </div>
@@ -338,7 +431,7 @@
       <div class="section-title" style="margin-top:14px;margin-bottom:8px">Coût complet</div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Coût complet (€/j) <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Coût complet (€/j)</label>
           <input type="number" class="form-input" id="cf-cout-complet" placeholder="400" min="0" oninput="updateTcDisplay()" />
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Coût employeur total par jour travaillé</div>
         </div>
@@ -374,9 +467,6 @@
   <div class="modal-box" id="opportunite-modal-box">
     <div class="modal-header">
       <h2 id="opportunite-modal-title">Nouvelle opportunité</h2>
-      <button class="btn-icon" onclick="closeModal('opportunite-overlay')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="of-id" />
@@ -384,25 +474,15 @@
 
       <!-- Modalités regroupées à part des candidatures : ce sont 2 natures d'info différentes
            (les conditions du besoin vs. qui y répond) — même logique que la modale Prestation
-           (Consultant / Modalités séparés). -->
+           (Tarification / Modalités séparées). Même ordre de champs et mêmes libellés que la
+           modale Prestation pour les champs communs (Nature, Titre du profil, Client, Service
+           client, Dates, Limite d'UO) — seule différence assumée : "estimé" sur TJM/Taux
+           d'activité, une opportunité n'a encore rien de confirmé. -->
       <div class="section-title" style="margin-bottom:8px">Modalités de l'opportunité</div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Client <span class="req">(obligatoire)</span></label>
-          <input type="text" class="form-input" id="of-client" placeholder="Société Générale" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Service client <span class="opt">(optionnel)</span></label>
-          <input type="text" class="form-input" id="of-service" placeholder="DSI — Pôle Data" />
-        </div>
-      </div>
-      <div class="form-row-3">
-        <div class="form-group">
-          <label class="form-label">Titre du besoin <span class="opt">(optionnel)</span></label>
-          <input type="text" class="form-input" id="of-titre" placeholder="Développeur Java Senior" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Nature <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Nature</label>
+          <div class="form-help">Type de contrat avec le client, si déjà connu.</div>
           <select class="form-select" id="of-nature">
             <option value="">— Pas encore connue —</option>
             <option value="mission">Mission (régie)</option>
@@ -411,32 +491,69 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Statut <span class="opt">(optionnel)</span></label>
-          <select class="form-select" id="of-status">
-            <option value="ouvert">Ouvert</option>
-            <option value="pourvu">Pourvu</option>
-            <option value="abandonne">Abandonné</option>
-          </select>
+          <label class="form-label">Titre du profil</label>
+          <div class="form-help">Intitulé du poste recherché.</div>
+          <input type="text" class="form-input" id="of-titre" placeholder="Intitulé du poste" />
         </div>
       </div>
+
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Date de début prévue <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Client</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
+          <div class="form-error" id="err-of-client"></div>
+          <input type="text" class="form-input" id="of-client" placeholder="Nom du client" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Service client</label>
+          <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
+          <input type="text" class="form-input" id="of-service" placeholder="Service ou pôle" />
+        </div>
+      </div>
+
+      <div class="form-label" style="margin-top:12px;margin-bottom:8px">Dates</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date de début</label>
+          <div class="form-help">Date de démarrage envisagée, pas toujours connue dès la détection.</div>
           <input type="date" class="form-input" id="of-start" />
         </div>
         <div class="form-group">
-          <label class="form-label">Date de fin prévue <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Date de fin prévue</label>
+          <div class="form-help">Date de fin envisagée.</div>
+          <div class="form-error" id="err-of-end"></div>
           <input type="date" class="form-input" id="of-end" />
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">TJM estimé (€/j) <span class="opt">(optionnel)</span></label>
-          <input type="number" class="form-input" id="of-tjm" placeholder="650" min="0" />
+          <label class="form-label">Limite d'UO / an (j)</label>
+          <div class="form-help">Plafond annuel de jours facturables.</div>
+          <input type="number" class="form-input" id="of-uo" placeholder="Nombre de jours par an" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label">Taux d'activité estimé <span class="opt">(optionnel)</span></label>
+          <label class="form-label">Statut</label>
+          <div class="form-help">Se met à jour automatiquement dès qu'une candidature est ajoutée ou change.</div>
+          <select class="form-select" id="of-status">
+            <option value="ouvert">Ouvert</option>
+            <option value="pourvu">Gagnée</option>
+            <option value="abandonne">Perdue</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">TJM estimé (€/j)</label>
+          <div class="form-help">Taux journalier moyen envisagé, pas encore confirmé.</div>
+          <input type="number" class="form-input" id="of-tjm" placeholder="Montant en €/jour" min="0" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Taux d'activité estimé</label>
+          <div class="form-help">Part du temps envisagée, pas encore confirmée (5/5 = temps plein).</div>
           <select class="form-select" id="of-fte">
             <option value="">— Pas encore connu —</option>
             <option value="5">5/5 — Plein temps</option>
@@ -446,13 +563,13 @@
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:14px;margin-bottom:8px">Candidatures</div>
+      <div class="section-title" style="margin-top:18px;margin-bottom:8px">Candidatures</div>
       <div id="opp-candidatures-list"></div>
       <button class="btn-add-small" style="margin-top:8px" onclick="addCandidatureInModal()">+ Ajouter un candidat</button>
     </div>
     <div class="modal-footer">
       <button class="btn-danger" id="btn-del-opp" onclick="deleteOpportunite()" style="display:none">Supprimer</button>
-      <button class="btn-secondary" onclick="closeModal('opportunite-overlay')">Annuler</button>
+      <button class="btn-secondary" onclick="cancelOpportuniteModal()">Annuler</button>
       <button class="btn-primary" onclick="saveOpportunite()">Enregistrer</button>
     </div>
   </div>

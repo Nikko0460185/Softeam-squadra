@@ -88,17 +88,18 @@ Tableau de missions/prestations, chacune rattachée à un consultant.
 | `client` | string | Nom du client final. |
 | `clientService` | string | Service/pôle chez le client (optionnel). |
 | `nature` | string | `mission` (régie), `forfait` ou `projet_interne`. |
+| `titre` | string | Intitulé du profil/poste occupé sur cette mission (optionnel). Repris automatiquement de l'opportunité d'origine si une candidature est gagnée, comme le TJM estimé. |
 | `startDate` | string (`YYYY-MM-DD`) | Date de début de la prestation. |
 | `endDate` | string (`YYYY-MM-DD`) | Date de fin prévue initialement. |
-| `extension` | object `{ active, date }` | Prolongation : `active` (bool) et `date` (nouvelle date de fin) si la mission est prolongée au-delà de `endDate`. |
-| `earlyExit` | object `{ active, date }` | Sortie anticipée : `active` (bool) et `date` si la mission s'arrête avant `endDate`. |
+| `missionEvents` | array de `{ id, type, date, resumeDate? }` | Historique des modifications de la mission : `type` = `prolongation` (nouvelle date de fin, `date` > `endDate`), `pause` (mission arrêtée temporairement, `resumeDate` optionnelle si la reprise n'est pas encore connue) ou `sortie_anticipee` (`date` < `endDate`). Plusieurs entrées possibles dans le temps (ex : prolongée une 1re fois, puis une 2e) — la plus récente entrée `prolongation`/`sortie_anticipee` fait foi pour la fin effective (`effectiveEnd()`) ; une `pause` n'affecte pas la fin, seulement le statut (`en_pause`) pendant sa fenêtre. **Le Gantt et le statut lisent cet historique ; les Statistiques (CA, occupation) ne l'utilisent pas encore et continuent de considérer une prestation en pause comme normalement active.** |
 | `tjm` | number | TJM (taux journalier moyen) initial, en €/jour. |
 | `fte` | number | Taux d'activité, de 1 à 5 (5 = temps plein, ex: 4 = 4 jours/5). |
-| `tjmRevisions` | array de `{ date, tjm }` | Historique des révisions de TJM : à chaque `date`, le nouveau `tjm` s'applique. |
+| `tjmRevisions` | array de `{ date, tjm?, fte? }` | Historique des révisions de TJM et/ou taux d'activité : à chaque `date`, le(s) champ(s) renseigné(s) (`tjm` et/ou `fte` — au moins un des deux) s'applique(nt) à partir de cette date. **Le TJM est utilisé partout dans les calculs (`currentTjm()`) ; le taux d'activité révisé n'est affiché que dans la modale Prestation elle-même — le Gantt et les Statistiques continuent de lire `fte` à plat sur la prestation, pas l'historique.** |
 | `notes` | string | Notes libres (contacts, informations utiles). |
 | `opportuniteId` | string | Référence vers `id` dans `opportunites.json` (optionnel) : renseigné automatiquement quand la prestation naît d'une candidature gagnée, pour retrouver l'opportunité d'origine depuis la prestation. |
+| `limiteUOAn` | number | Limite d'unités d'œuvre (jours) par an imposée par le client (optionnel, ex : 210/216/218 — vide si le client n'impose pas de limite). Repris automatiquement de l'opportunité d'origine si une candidature est gagnée, comme le TJM estimé. Non encore utilisé dans les calculs de CA/Statistiques — voir [decisions/jours-travailles-ca/](decisions/jours-travailles-ca/). |
 
-Pas de champ `status` : une prestation est toujours "En cours" ou "Terminée", calculé à l'affichage à partir de `endDate`/`extension`/`earlyExit` comparées à la date du jour — jamais stocké, donc jamais désynchronisé de la réalité.
+Pas de champ `status` : une prestation est toujours "En cours", "En pause" ou "Terminée", calculé à l'affichage à partir de `endDate`/`missionEvents` comparés à la date du jour — jamais stocké, donc jamais désynchronisé de la réalité.
 
 ### `data/opportunites.json`
 
@@ -115,6 +116,7 @@ Tableau des besoins client détectés (pipeline avant mission), indépendants de
 | `nature` | string | `mission` (régie), `forfait` ou `projet_interne` (optionnel — pas toujours connue dès la détection). |
 | `tjm` | number | TJM estimé, en €/jour (optionnel). Avec `startDate`/`endDate`, sert à estimer le "CA en négociation" dans les Statistiques. |
 | `fte` | number | Taux d'activité estimé, de 3 à 5 (optionnel). |
+| `limiteUOAn` | number | Limite d'unités d'œuvre (jours) par an imposée par le client (optionnel, ex : 210/216/218 — vide si le client n'impose pas de limite). Repris automatiquement sur la prestation si une candidature est gagnée, comme le TJM estimé. |
 | `status` | string | `ouvert` (en cours), `pourvu` (une candidature a gagné) ou `abandonne`. |
 
 ### `data/candidatures.json`
