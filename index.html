@@ -37,11 +37,6 @@
     <div class="logo">SQUADRA <span>Pilotage & Staffing</span></div>
   </div>
 
-  <!-- Rempli par JS (relocateTopbarActions) uniquement en fenêtre étroite : reçoit les 2
-       boutons "Ajouter..." déplacés depuis la topbar, pour que tout reste regroupé et lisible
-       au même endroit plutôt que masqué en icône. Vide et donc invisible en desktop. -->
-  <div class="sidebar-section" id="sidebar-actions"></div>
-
   <div class="sidebar-section">
     <h3 class="sidebar-section-title">Navigation</h3>
     <div class="nav-item active" data-view="gantt" onclick="switchView('gantt')">
@@ -62,6 +57,13 @@
     <h3 class="sidebar-section-title">Consultants (<span id="cons-count">0</span>)</h3>
   </div>
   <div class="consultant-list" id="cons-list"></div>
+
+  <!-- Rempli par JS (relocateTopbarActions) uniquement en fenêtre étroite : reçoit les 2
+       boutons "Ajouter..." déplacés depuis la topbar, regroupés ici avec "Ajouter un
+       consultant" pour que toutes les actions de création soient au même endroit, en fin
+       de tiroir. Vide et donc invisible en desktop. -->
+  <div class="sidebar-section" id="sidebar-actions"></div>
+
   <button id="btn-add-consultant" class="btn-primary" style="width:calc(100% - 24px);margin:8px 12px;justify-content:center" onclick="openConsModal()">
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     Ajouter un consultant
@@ -131,8 +133,8 @@
           <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
             <span class="filter-group-label" id="lbl-gantt-viewmode">Regrouper par :</span>
             <div class="viewmode-tabs" role="tablist" aria-labelledby="lbl-gantt-viewmode">
-              <button class="filter-btn viewmode-btn active" id="tab-gantt-consultants" role="tab" aria-selected="true"  aria-controls="gantt-rows" data-vm="consultants" onclick="setViewMode('consultants')">Consultants</button>
-              <button class="filter-btn viewmode-btn"        id="tab-gantt-clients"     role="tab" aria-selected="false" aria-controls="gantt-rows" data-vm="clients"     onclick="setViewMode('clients')">Clients</button>
+              <button class="filter-btn viewmode-btn active" id="tab-gantt-consultants" role="tab" aria-selected="true"  tabindex="0"  aria-controls="gantt-rows" data-vm="consultants" onclick="setViewMode('consultants')">Consultants</button>
+              <button class="filter-btn viewmode-btn"        id="tab-gantt-clients"     role="tab" aria-selected="false" tabindex="-1" aria-controls="gantt-rows" data-vm="clients"     onclick="setViewMode('clients')">Clients</button>
             </div>
           </div>
         </div>
@@ -187,8 +189,8 @@
           <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
             <span class="filter-group-label" id="lbl-viewmode">Regrouper par :</span>
             <div class="viewmode-tabs" role="tablist" aria-labelledby="lbl-viewmode">
-              <button class="filter-btn viewmode-btn active" id="tab-consultants" role="tab" aria-selected="true"  aria-controls="list-view" data-vm="consultants" onclick="setViewMode('consultants')">Consultants</button>
-              <button class="filter-btn viewmode-btn"        id="tab-clients"     role="tab" aria-selected="false" aria-controls="list-view" data-vm="clients"     onclick="setViewMode('clients')">Clients</button>
+              <button class="filter-btn viewmode-btn active" id="tab-consultants" role="tab" aria-selected="true"  tabindex="0"  aria-controls="list-view" data-vm="consultants" onclick="setViewMode('consultants')">Consultants</button>
+              <button class="filter-btn viewmode-btn"        id="tab-clients"     role="tab" aria-selected="false" tabindex="-1" aria-controls="list-view" data-vm="clients"     onclick="setViewMode('clients')">Clients</button>
             </div>
           </div>
         </div>
@@ -203,7 +205,7 @@
 
 <!-- PRESTATION MODAL -->
 <div class="modal-overlay" id="prest-overlay" onclick="overlayClick(event,'prest-overlay')">
-  <div class="modal-box" id="prest-modal-box">
+  <div class="modal-box" id="prest-modal-box" role="dialog" aria-modal="true" aria-labelledby="prest-modal-title">
     <div class="modal-header">
       <h2 id="prest-modal-title">Nouvelle prestation</h2>
     </div>
@@ -443,7 +445,7 @@
 
 <!-- CONSULTANT MODAL -->
 <div class="modal-overlay" id="cons-overlay" onclick="overlayClick(event,'cons-overlay')">
-  <div class="modal-box" id="cons-modal-box">
+  <div class="modal-box" id="cons-modal-box" role="dialog" aria-modal="true" aria-labelledby="cons-modal-title">
     <div class="modal-header">
       <h2 id="cons-modal-title">Nouveau consultant</h2>
       <button class="btn-icon" onclick="closeModal('cons-overlay')" aria-label="Fermer">
@@ -512,7 +514,7 @@
 
 <!-- OPPORTUNITÉ MODAL — fenêtre unique : besoin, candidatures (pushs/soutenances), gain/perte -->
 <div class="modal-overlay" id="opportunite-overlay" onclick="overlayClick(event,'opportunite-overlay')">
-  <div class="modal-box" id="opportunite-modal-box">
+  <div class="modal-box" id="opportunite-modal-box" role="dialog" aria-modal="true" aria-labelledby="opportunite-modal-title">
     <div class="modal-header">
       <h2 id="opportunite-modal-title">Nouvelle opportunité</h2>
     </div>
@@ -625,9 +627,9 @@
 
 <!-- PROFILE LAUNCH PANEL -->
 <div class="modal-overlay open" id="profile-overlay">
-  <div class="modal-box" id="profile-modal-box">
+  <div class="modal-box" id="profile-modal-box" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
     <div class="modal-header">
-      <h2>Qui êtes-vous ?</h2>
+      <h2 id="profile-modal-title">Qui êtes-vous ?</h2>
     </div>
     <div class="modal-body">
       <div class="form-group">

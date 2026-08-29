@@ -304,6 +304,7 @@ initTextScale();
 load().then(() => {
   if (!S.consultants?.length) seedDemo();
   populateProfileSelect();
+  openModalA11y('profile-overlay'); // ouverte par défaut au premier chargement (voir index.html)
 });
 
 // ─── PROFILE (panneau de lancement) ─────────────────────────────────────────
@@ -332,7 +333,7 @@ function confirmProfile() {
     currentProfile = { type: 'consultant', id: val };
     filterCons = val;
   }
-  document.getElementById('profile-overlay').classList.remove('open');
+  closeModal('profile-overlay');
   const badge = document.getElementById('profile-badge-label');
   badge.textContent = currentProfile.type === 'manager'
     ? 'Connecté : Manager'
@@ -385,6 +386,7 @@ function openProfileSwitcher() {
   const preselect = currentProfile?.type === 'manager' ? 'manager' : currentProfile?.id;
   populateProfileSelect(preselect);
   document.getElementById('profile-overlay').classList.add('open');
+  openModalA11y('profile-overlay');
 }
 
 // Ferme le menu utilisateur (barre du haut) au clic en dehors — <details> ne le fait pas nativement.
@@ -431,7 +433,7 @@ function renderSidebar() {
     item.innerHTML = `
       <div class="avatar" style="background:${color}22;color:${color}">${initials(c.name)}</div>
       <div class="consultant-name">${c.name}<small>${c.role || ''}</small>${consultantStatusPills(c)}</div>
-      <button class="btn-icon" onclick="event.stopPropagation();openConsModal('${c.id}')" title="Modifier">
+      <button class="btn-icon" onclick="event.stopPropagation();openConsModal('${c.id}')" title="Modifier" aria-label="Modifier ${c.name}">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>`;
     item.onclick = () => { filterCons = c.id; render(); };
@@ -788,7 +790,7 @@ function prestationToRow(p, viewMode) {
     statusClass: `pill-${status}`, statusLabel: statusLabel(status),
     typeClass: `nature-${p.nature||'mission'}`, typeLabel: natureLabel(p.nature),
     profilLine: p.titre || '',
-    clientLine,
+    clientLine, whoLabel: clientLine, // whoLabel : version texte brut de clientLine, pour l'aria-label du bouton Modifier (clientLine peut contenir du HTML dans opportuniteToRow)
     subLine: [p.clientService, ...modifiers].filter(Boolean).join(' · '),
     dateLine,
     valueLine: `${tjmCur.toLocaleString('fr-FR')} €/j${hasRevision?`<small>base: ${p.tjm.toLocaleString('fr-FR')} €</small>`:''}`,
@@ -829,7 +831,7 @@ function opportuniteToRow(opp, cands) {
     // "Qui" = les candidats (pas encore un consultant confirmé) — même principe que la
     // prestation en Vue Clients : la carte regroupe déjà par client, l'info qui varie ligne à
     // ligne est le(s) candidat(s), pas le titre du besoin (désormais dans profilLine).
-    clientLine: candNames,
+    clientLine: candNames, whoLabel: opp.client,
     subLine: opp.clientService || '',
     dateLine,
     valueLine: '—', activiteLine: '—', alertLine: '',
@@ -846,7 +848,7 @@ function candidatureToRow(cand) {
     statusClass: `pill-cand-${cand.status}`, statusLabel: candidatureStatusLabel(cand.status),
     typeClass: 'nature-opportunite', typeLabel: 'Opportunité', originLine: '',
     profilLine: opp.titre || '',
-    clientLine: opp.client,
+    clientLine: opp.client, whoLabel: opp.client,
     subLine: opp.clientService || '',
     ...oppDateInfo(opp),
     valueLine: '—', activiteLine: '—', alertLine: '',
@@ -858,22 +860,21 @@ function candidatureToRow(cand) {
 // par client), "Client / Service" en Vue Consultants (la carte regroupe déjà par consultant).
 function buildUnifiedTableHtml(items, whoHeader) {
   if (!items.length) return '';
-  const cols = '100px 130px 130px 1fr 190px 90px 70px 26px 36px';
-  const header = `<div class="prest-header-row" style="grid-template-columns:${cols}"><span>Statut</span><span>Type</span><span>Profil</span><span>${whoHeader}</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span><span></span></div>`;
+  const header = `<div class="prest-header-row"><span>Statut</span><span>Type</span><span>Profil</span><span>${whoHeader}</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span><span></span></div>`;
   const rows = items.slice().sort((a,b) => b.sortDate.localeCompare(a.sortDate)).map(it => `
-    <div class="prest-row" style="grid-template-columns:${cols}">
+    <div class="prest-row">
       <span class="status-pill ${it.statusClass}">${it.statusLabel}</span>
-      <div>
+      <div class="prest-type">
         <span class="nature-badge ${it.typeClass}">${it.typeLabel}</span>
         ${it.originLine||''}
       </div>
-      <div class="prest-profil">${it.profilLine||'<span style="color:var(--text-muted)">—</span>'}</div>
+      <div class="prest-profil${it.profilLine?'':' prest-profil-empty'}">${it.profilLine||'<span style="color:var(--text-muted)">—</span>'}</div>
       <div class="prest-client">${it.clientLine}<small>${it.subLine||''}</small></div>
       <div class="prest-dates">${it.dateLine}</div>
       <div class="prest-tjm">${it.valueLine}</div>
-      <div style="font-size:var(--text-base);font-weight:600;color:var(--text-dim);text-align:right">${it.activiteLine}</div>
-      <div style="text-align:center;font-size:var(--text-base)">${it.alertLine||''}</div>
-      <button class="btn-icon" onclick="${it.onClick}" title="Modifier">
+      <div class="prest-activite">${it.activiteLine}</div>
+      <div class="prest-alert">${it.alertLine||''}</div>
+      <button class="btn-icon prest-edit" onclick="${it.onClick}" title="Modifier" aria-label="Modifier ${it.typeLabel} — ${it.whoLabel}">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>
     </div>`).join('');
@@ -2161,6 +2162,7 @@ function openPrestModal(p, forceConsId) {
   document.getElementById('mission-edit-section').style.display = 'none';
   document.getElementById('tarif-edit-section').style.display   = 'none';
   prestModalSnapshot = prestFormState();
+  openModalA11y('prest-overlay');
 }
 
 // TJM initial/Taux d'activité et Modification de la mission ne sont des champs de "définition"
@@ -2629,6 +2631,7 @@ function openConsModal(id) {
   }
   renderCostRevisions();
   updateTcDisplay();
+  openModalA11y('cons-overlay');
 }
 
 function saveConsultant() {
@@ -2718,6 +2721,7 @@ function openOpportuniteModal(opp, prefillClient) {
   }
   renderOpportuniteCandidatures();
   oppModalSnapshot = oppFormState();
+  openModalA11y('opportunite-overlay');
 }
 
 // Capture l'état courant du formulaire Opportunité (champs + candidatures), pour détecter une
@@ -3035,6 +3039,9 @@ function setViewMode(v) {
     const selected = b.dataset.vm === v;
     b.classList.toggle('active', selected);
     b.setAttribute('aria-selected', selected ? 'true' : 'false');
+    // Roving tabindex (motif ARIA tabs) : seul l'onglet actif est atteint par Tab, les
+    // flèches gauche/droite déplacent le focus entre les onglets (voir plus bas).
+    b.tabIndex = selected ? 0 : -1;
   });
   // Les panneaux (#list-view, #gantt-rows) référencent l'onglet actif : un lecteur d'écran doit
   // pouvoir remonter de leur contenu à l'onglet qui les pilote, même après un changement de vue.
@@ -3042,6 +3049,27 @@ function setViewMode(v) {
   document.getElementById('gantt-rows').setAttribute('aria-labelledby', `tab-gantt-${v}`);
   render();
 }
+
+// Motif ARIA tabs complet : flèches gauche/droite/Home/End déplacent le focus ET activent
+// l'onglet visé (activation automatique — cohérent avec le clic, qui bascule déjà la vue
+// instantanément). Un seul gestionnaire pour les 2 groupes d'onglets Consultants/Clients
+// (Gantt et Vue liste), chacun cyclant dans son propre tablist.
+document.querySelectorAll('[role="tablist"]').forEach(list => {
+  list.addEventListener('keydown', (e) => {
+    const tabs = Array.from(list.querySelectorAll('[role="tab"]'));
+    const i = tabs.indexOf(document.activeElement);
+    if (i === -1) return;
+    let next = null;
+    if (e.key === 'ArrowRight') next = tabs[(i + 1) % tabs.length];
+    else if (e.key === 'ArrowLeft') next = tabs[(i - 1 + tabs.length) % tabs.length];
+    else if (e.key === 'Home') next = tabs[0];
+    else if (e.key === 'End') next = tabs[tabs.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
+    setViewMode(next.dataset.vm);
+  });
+});
 
 // ─── MODAL UTILS ─────────────────────────────────────────────────────────────
 // Signalement accessible des champs obligatoires manquants : surbrillance visuelle
@@ -3072,7 +3100,61 @@ function clearFieldErrors(ids) {
     }
   });
 }
-function closeModal(overlayId) { document.getElementById(overlayId).classList.remove('open'); }
+// ─── ACCESSIBILITÉ MODALES : focus au clavier ───────────────────────────────
+// Sans ça, à l'ouverture d'une modale (souris ou clavier), le focus restait sur la page de
+// fond — un utilisateur clavier ne pouvait remplir aucun champ (RGAA 7.3/12.6). Centralisé
+// ici plutôt que répété dans chaque open*Modal, puisque les 4 modales de données ferment
+// déjà toutes via closeModal(). Même logique de "bouton Annuler par modale" que overlayClick
+// ci-dessous, réutilisée pour Échap.
+const MODAL_CANCEL = {
+  'prest-overlay': cancelPrestModal,
+  'opportunite-overlay': cancelOpportuniteModal,
+};
+let modalTrigger = null;
+
+function getFocusable(container) {
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null);
+}
+
+// À appeler à la fin de chaque open*Modal, une fois la modale entièrement remplie/affichée.
+// Le focus va au 1er champ du corps de la modale (pas au bouton "Fermer" du header quand il
+// existe — cons-overlay en a un, prest/opportunite-overlay n'en ont pas : sans ce choix,
+// le 1er arrêt du Tab changerait selon la modale ouverte).
+function openModalA11y(overlayId) {
+  modalTrigger = document.activeElement;
+  const overlay = document.getElementById(overlayId);
+  const body = overlay.querySelector('.modal-body');
+  const focusable = getFocusable(body || overlay);
+  if (focusable.length) focusable[0].focus();
+}
+
+// Piège le Tab dans la modale ouverte, et route Échap vers son bouton Annuler (mêmes
+// vérifications d'unsaved-changes que la croix/le clic en dehors).
+document.addEventListener('keydown', (e) => {
+  const overlay = document.querySelector('.modal-overlay.open');
+  if (!overlay) return;
+  if (e.key === 'Escape') {
+    // Cas particulier : "Qui êtes-vous ?" ne doit pas pouvoir se fermer sans choix tant
+    // qu'aucun profil n'a jamais été validé (1er chargement) — seul un re-changement de
+    // profil (currentProfile déjà défini) peut être annulé sans effet.
+    if (overlay.id === 'profile-overlay' && !currentProfile) return;
+    (MODAL_CANCEL[overlay.id] || (() => closeModal(overlay.id)))();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusable = getFocusable(overlay);
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+function closeModal(overlayId) {
+  document.getElementById(overlayId).classList.remove('open');
+  if (modalTrigger) { modalTrigger.focus(); modalTrigger = null; }
+}
 function overlayClick(e, id) {
   if (e.target.id !== id) return;
   if (id === 'prest-overlay') { cancelPrestModal(); return; }

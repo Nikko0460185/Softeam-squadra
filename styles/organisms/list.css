@@ -9,12 +9,24 @@
   padding: 12px 16px; display: flex; align-items: center; gap: 12px;
   border-bottom: 1px solid var(--border); background: var(--surface2);
 }
-.list-card-body { padding: 4px 0; }
+/* Scroll horizontal de secours : entre 900px (bascule vers les cartes empilées) et ~1150px,
+   la sidebar fixe (260px) ne laisse plus assez de place pour que les 9 colonnes tiennent même
+   à leur largeur minimale (somme des minmax ci-dessous ≈ 844px). Plutôt que de les compresser
+   davantage au point de rendre le contenu illisible ou invisible, min-width sur .prest-row
+   fait apparaître un scroll horizontal ici — les données restent toutes visibles et lisibles,
+   quitte à devoir défiler. */
+.list-card-body { padding: 4px 0; overflow-x: auto; }
 
+/* Colonnes en minmax() plutôt qu'en px fixes : chaque colonne peut se réduire jusqu'à un
+   plancher (aligné sur les contraintes réelles du contenu — ex. .nature-badge a déjà un
+   min-width de 124px dans badges.css, donc la colonne Type ne peut pas descendre en dessous
+   sans que le badge déborde) puis regagne sa taille confortable dès que la largeur le permet. */
 .prest-row {
   display: grid;
-  grid-template-columns: 100px 130px 130px 1fr 190px 90px 70px 26px 36px;
-  align-items: center; gap: 10px;
+  grid-template-columns:
+    minmax(92px,100px) minmax(128px,130px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,90px) minmax(50px,70px) 26px 36px;
+  align-items: center; gap: 10px; min-width: 844px;
   padding: 10px 16px; border-bottom: 1px solid var(--border);
   transition: background .1s;
 }
@@ -23,8 +35,10 @@
 
 .prest-header-row {
   display: grid;
-  grid-template-columns: 100px 130px 130px 1fr 190px 90px 70px 26px 36px;
-  gap: 10px; padding: 6px 16px;
+  grid-template-columns:
+    minmax(92px,100px) minmax(128px,130px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,90px) minmax(50px,70px) 26px 36px;
+  gap: 10px; min-width: 844px; padding: 6px 16px;
   font-size:var(--text-2xs); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-muted);
   border-bottom: 1px solid var(--border); background: var(--surface3);
@@ -47,6 +61,53 @@
 
 .prest-tjm { font-size:var(--text-base); font-weight: 700; color: var(--accent); text-align: right; }
 .prest-tjm small { display: block; font-size:var(--text-2xs); color: var(--text-muted); font-weight: 400; }
+
+.prest-activite { font-size:var(--text-base); font-weight: 600; color: var(--text-dim); text-align: right; }
+.prest-alert { text-align: center; font-size:var(--text-base); }
+
+/* Fenêtre étroite : la grille à 9 colonnes fixes (100 à 190px chacune) ne peut plus tenir sur
+   une seule ligne — chaque ligne devient une petite carte empilée plutôt que de comprimer/
+   couper le contenu. La ligne d'en-tête (libellés de colonnes) n'a plus de sens dans cette
+   disposition et disparaît ; le sens de chaque valeur reste lisible par sa mise en forme
+   (pastille de statut, badge de type, nom en gras...). */
+@media (max-width: 900px) {
+  .prest-header-row { display: none; }
+  .prest-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    padding: 14px 16px; position: relative;
+    min-width: 0; /* annule le plancher de la grille desktop : ici la carte doit pouvoir
+                     rester aussi étroite que le tiroir/la fenêtre, pas de scroll à prévoir */
+  }
+  .list-card-body { overflow-x: visible; }
+  .prest-row > .status-pill { order: 1; }
+  .prest-row > .prest-type  { order: 2; }
+  .prest-row > .prest-alert { order: 3; }
+  .prest-row > .prest-client  { order: 4; flex-basis: 100%; }
+  .prest-row > .prest-profil  { order: 5; flex-basis: 100%; }
+  /* "—" quand le profil est vide (cas fréquent) : garder la ligne a du sens dans la grille
+     desktop (case vide visible dans sa colonne) mais coûte une ligne entière une fois empilé
+     pour rien — on la retire donc ici plutôt que d'afficher un tiret seul sur toute la largeur. */
+  .prest-row > .prest-profil.prest-profil-empty { display: none; }
+  /* Dates sur leur propre ligne, prolongation/sortie anticipée à la suite plutôt que sur une
+     2e ligne (display:inline ici seulement — reste en bloc séparé dans la colonne étroite du
+     tableau desktop, où l'empilement évite de comprimer la colonne). */
+  .prest-row > .prest-dates { order: 6; flex-basis: 100%; }
+  .prest-dates .ext-label, .prest-dates .exit-label { display: inline; margin-left: 8px; }
+
+  /* TJM et Activité sur leur propre ligne (à la suite de celle des dates), avec un libellé
+     explicite ("TJM :", "Activité :") : sans l'en-tête de colonnes du tableau desktop (masqué
+     ci-dessus), une valeur seule comme "5/5" ne veut plus rien dire hors contexte. */
+  .prest-row > .prest-tjm      { order: 7; text-align: left; }
+  .prest-row > .prest-activite { order: 8; margin-left: 16px; }
+  .prest-tjm::before      { content: "TJM : ";      font-weight: 400; color: var(--text-muted); }
+  .prest-activite::before { content: "Activité : "; font-weight: 400; color: var(--text-muted); }
+  /* Bouton d'édition ancré en haut à droite de la carte plutôt que dans le flux, pour ne
+     pas casser l'alignement des lignes de contenu qui précèdent. */
+  .prest-row > .prest-edit {
+    order: 0; position: absolute; top: 10px; right: 12px;
+  }
+  .prest-row { padding-right: 48px; } /* réserve la place du bouton d'édition en position absolue */
+}
 
 /* Modale Opportunité — une carte par candidature, avec ses 2 sous-listes imbriquées
    (pushs de book, soutenances) — main.js renderOpportuniteCandidatures() */

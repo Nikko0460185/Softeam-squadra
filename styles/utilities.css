@@ -1,3 +1,12 @@
+/* Indicateur de focus clavier visible, cohérent sur toute l'app (RGAA 10.7 / WCAG 2.4.7).
+   Avant ça, seuls les champs de formulaire et la chronologie Gantt avaient un focus visible —
+   les boutons, onglets et filtres n'en avaient aucun, ce qui rendait la navigation clavier
+   (flèches sur les onglets Consultants/Clients, Tab...) invisible à l'usage même quand elle
+   fonctionnait réellement, donnant l'impression qu'elle ne marche pas. */
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
 #toast {
   position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
   background: var(--surface2); border: 1px solid var(--border);
