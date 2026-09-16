@@ -23,17 +23,115 @@
 .modal-header h2 { font-size:var(--text-lg); font-weight: 600; }
 .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
 
-/* Lien de continuité prestation <-> opportunité d'origine (main.js viewOriginOpportunite()) */
+/* Continuité prestation <-> opportunité d'origine : les 2 blocs sont désormais affichés
+   ensemble sur "Suivre la demande" (main.js openSuiviDemande()), ce bandeau reste purement
+   informatif. */
 .modal-info-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   background: var(--blue-soft); color: var(--blue);
   border-radius: var(--radius); padding: 8px 12px; margin-bottom: 16px;
   font-size:var(--text-sm); font-weight: 600;
 }
-/* Variante neutre : prestation sans opportunité d'origine (créée directement) — explicite
-   plutôt qu'un bandeau absent, pour éviter que l'utilisateur se demande si un lien manque. */
-.modal-info-banner-muted { background: var(--neutral-soft); color: var(--text-dim); font-weight: 400; }
 .modal-footer {
   padding: 14px 20px; border-top: 1px solid var(--border);
   display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0;
 }
+
+/* "Suivre la demande" (main.js openSuiviDemande()) : overlay plein écran plutôt que boîte
+   centrée, et bloc Prestation/Opportunité embarqué tel quel (mêmes boîtes, même id, juste
+   déplacées) — un seul jeu d'actions (Annuler/Enregistrer) doit rester visible, celui de
+   l'overlay plein écran ; le bouton Supprimer de chaque bloc reste, lui, utile en place. */
+#suivi-demande-box.overlay-fullscreen {
+  max-width: none; width: 100%; height: 100%; max-height: 100vh; border-radius: 0;
+}
+#prest-modal-box.suivi-demande-embedded, #opportunite-modal-box.suivi-demande-embedded {
+  max-width: none; border: none; border-radius: 0; overflow: visible; max-height: none;
+}
+.suivi-demande-embedded .modal-header { display: none; }
+.suivi-demande-embedded .modal-footer .btn-secondary,
+.suivi-demande-embedded .modal-footer .btn-primary { display: none; }
+/* Marges internes alignées sur celles du KPI (#sd-kpis, directement dans le padding 20px de
+   #suivi-demande-box .modal-body) : sans ce reset, le padding propre à la boîte embarquée
+   s'ajoutait à celui de la page, décalant les champs de saisie par rapport aux cartes KPI. */
+.suivi-demande-embedded .modal-body { padding: 0; }
+/* Résumé "Statut/dates/TJM/marge/dernière modification" en tête de la modale Prestation — mis en
+   forme ici plutôt qu'en style inline dans index.html (un style inline ne peut jamais être
+   masqué par une règle externe, même très spécifique : bug constaté le 2026-09-16, la règle
+   .suivi-demande-embedded #prest-summary-row ci-dessous était sans effet tant que le style
+   inline existait). Fait doublon avec les cartes KPI Statut/TJM/CA de "Suivre la demande" —
+   masqué uniquement là-bas ; reste affiché (et utile) dans la modale de création. */
+#prest-summary-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.suivi-demande-embedded #prest-summary-row { display: none; }
+
+/* Sur "Suivre la demande" uniquement (plein écran, largeur disponible), "Modalités de la
+   prestation"/"Modalités de l'opportunité"/"Tarification" passent de 2 à 3 colonnes — pas dans
+   les modales de création (#tjm-fte-row/#of-tjm... restent en 2 colonnes là-bas, .form-row
+   n'étant pas dans un .sd-fields-3col hors de ce contexte). .form-row garde sa grille à 2
+   colonnes normalement (display:contents ici la neutralise) : ses .form-group deviennent des
+   items directs de la grille à 3 colonnes, qui se répartissent dans l'ordre du HTML — un label
+   intercalaire (ex: "Dates") prend toute la largeur pour rester un vrai repère visuel, pas un
+   champ de plus dans la grille. */
+.suivi-demande-embedded .sd-fields-3col {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  column-gap: 12px; row-gap: 0; align-items: start;
+}
+.suivi-demande-embedded .sd-fields-3col .form-row { display: contents; }
+.suivi-demande-embedded .sd-fields-3col > .form-label { grid-column: 1 / -1; }
+
+/* Frise chronologique de "Suivre la demande" (main.js renderSuiviDemandeTimeline()) : un point
+   neutre "Détection" commun, puis une ligne (lane) par candidat. Couleur réservée aux points ;
+   le texte (libellé, date) reste toujours dans les mêmes teintes neutres, quel que soit le type
+   de point — pas de dépendance à la couleur seule pour transmettre l'information. */
+#sd-timeline { margin-bottom: 20px; }
+.sd-tl-detection-row { margin-bottom: 14px; }
+
+/* Tronc commun : un filet vertical descend de "Détection" et longe toutes les lanes, chacune
+   raccordée par une amorce horizontale (::before) — align-items:flex-start sur .sd-timeline-lanes
+   est ce qui permet à chaque carte de lane de se limiter à sa propre largeur de contenu par
+   défaut (comportement non-stretch standard de flexbox) ; .sd-tl-lane-won la repasse à 100%. */
+.sd-timeline-lanes {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+  padding-left: 18px; border-left: 2px solid var(--border);
+}
+.sd-timeline-lane {
+  display: flex; flex-direction: column; gap: 8px; position: relative;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 12px 16px; max-width: 100%;
+}
+.sd-tl-lane-won { width: 100%; }
+.sd-timeline-lane::before {
+  content: ''; position: absolute; top: 20px; left: -18px; width: 18px; height: 2px; background: var(--border);
+}
+.sd-tl-lane-head { display: flex; align-items: center; gap: 8px; }
+.sd-tl-lane-name { font-size: var(--text-xs); color: var(--text); font-weight: 700; }
+
+/* Lane non gagnante : pas de width — inline-flex se limite naturellement à la largeur de son
+   contenu (aucun nombre d'étapes n'est fixé à l'avance). La lane gagnante occupe toute la
+   largeur disponible (display:flex + width:100%), ses points/connecteurs s'étirant pour remplir
+   cette largeur. */
+.sd-tl-lane-points { display: inline-flex; align-items: flex-start; max-width: 100%; }
+.sd-tl-lane-won .sd-tl-lane-points { display: flex; width: 100%; }
+
+.sd-tl-point {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  font-size: var(--text-xs); text-align: center; flex-shrink: 0;
+}
+.sd-tl-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  background: var(--dot-color, var(--text-dim)); border: 2px solid var(--surface2);
+}
+.sd-tl-point.sd-tl-undated .sd-tl-dot { background: transparent; border: 2px dashed var(--dot-color, var(--text-muted)); }
+.sd-tl-label { font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+.sd-tl-date  { color: var(--text-muted); white-space: nowrap; }
+
+/* Ligne attachée directement aux points (pas de marge horizontale), alignée sur le centre du
+   point plutôt que sur toute la hauteur de la colonne (qui inclut le texte en dessous) : le
+   point fait 10px, son centre est à 5px du haut ; la ligne fait 2px, d'où margin-top:4px. */
+.sd-tl-connector { height: 2px; background: var(--border); align-self: flex-start; margin-top: 4px; flex-shrink: 1; }
+.sd-tl-lane-won .sd-tl-connector { flex: 1; min-width: 24px; }
+.sd-timeline-lane:not(.sd-tl-lane-won) .sd-tl-connector { width: 48px; }
+
+@media (max-width: 900px) {
+  .sd-tl-lane-points { flex-wrap: wrap; row-gap: 14px; }
+}
+

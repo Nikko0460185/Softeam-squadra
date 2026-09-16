@@ -33,6 +33,24 @@ Barème défini dans `styles/tokens.css` : `--text-2xs` à `--text-2xl`, entièr
 
 Toute nouvelle taille de texte doit utiliser un des tokens `--text-*` existants, jamais une valeur px ou rem arbitraire — si aucun token ne correspond à un usage repéré, le signaler plutôt qu'en inventer un 9e silencieusement. Un `font-size` en px qui réapparaîtrait (nouveau code, copier-coller depuis un ancien exemple...) doit être signalé et migré immédiatement — la migration étant terminée, tout px restant est une régression, pas juste une dette en attente.
 
+## Hiérarchie visuelle des titres (H1, H2, H3...)
+
+Décision du 2026-09-16 (explicite, utilisateur) : le H3 (`.section-title`) et le H2 de modale (`.modal-header h2`) doivent avoir le **même style visuel** — même taille, même poids, pas de hiérarchie de taille entre eux. Ce qui marque le début d'une nouvelle section n'est pas une taille de police différente, mais un **espace fort avant** (`margin-top`) : plus l'espace au-dessus d'un titre est grand, plus il se lit comme "on change de sujet". Cohérent avec la décision déjà actée de garder `--text-2xs`→`--text-lg` aplatis à 0,8rem (voir plus haut) : l'outil ne cherche pas à construire de hiérarchie par la taille, mais par l'espacement.
+
+Ne pas réintroduire de hiérarchie de taille entre H2/H3 (ex: agrandir le H2 au-delà du H3, ou l'inverse) sans une nouvelle décision explicite de l'utilisateur — un essai en ce sens a déjà été fait et écarté le 2026-09-16.
+
+**Règle d'espacement (précisée le 2026-09-16)** : l'espace avant un titre est LE seul signal de début de section — jamais de filet/ligne (`border-top`) en plus, même porté par le bloc qui précède. Un `border-top` à côté d'un titre est systématiquement un candidat à retirer au profit du seul `margin-top` constant de `.section-title` (32px, `styles/organisms/stats.css`). Exception unique : aucun espace (`margin-top:0` en inline) si le titre est le tout premier élément de la page/modale (rien à séparer avant lui) — ex: "Modalités de la prestation" (1er de la modale Prestation), "Indicateurs" (1er de "Suivre la demande"). Un titre qui n'est pas le tout premier élément (ex: "Prestation"/"Opportunité" dans "Suivre la demande", qui viennent après les KPI) garde le `margin-top` par défaut, sans filet ni marge spéciale supplémentaire au niveau du conteneur.
+
+| Niveau | Rôle | Taille | Poids/couleur | Exemple |
+|---|---|---|---|---|
+| H1 | Titre de page unique | — | — | **N'existe pas encore dans l'outil** (SPA sans titre de page visible) — ne pas en inventer un sans raison ; si un jour introduit (ex: nom de l'appli dans la sidebar), le signaler pour trancher, pas décider seul(e) |
+| H2 | Titre de modale/dialogue (`.modal-header h2`) — un seul par modale | `--text-lg` | 600, couleur héritée (pleine opacité) | "Ajouter une opportunité", "Suivre la demande" |
+| H3 (`.section-title`) | Toute section structurante : sous-section de modale, zone de "Suivre la demande" ("Indicateurs"/"Prestation"/"Opportunité"), groupe de KPI hors modale (Statistiques) | `--text-lg` (même taille que le H2) | 600, couleur héritée — **même style que le H2**, pas de MAJUSCULES/`letter-spacing`/couleur atténuée | "Modalités de la prestation", "Tarification", "Prestation" (zone), "Activité · Q3 2026..." |
+
+Piège à éviter : les boîtes `#prest-modal-box`/`#opportunite-modal-box` sont réutilisées à l'identique entre les modales de création ("Ajouter...") et "Suivre la demande" (`main.js openSuiviDemande()`, reparenting DOM) — leurs propres titres H3 ("Modalités de la prestation"...) ne peuvent donc pas changer de **niveau de balise** (H3→H4) selon le contexte sans dupliquer le HTML. Comme H2 et H3 partagent maintenant le même style, ce n'est plus un problème pratique (rien à distinguer visuellement entre eux) — mais si une vraie hiérarchie de niveaux (H3→H4) était décidée un jour, cette contrainte de duplication du HTML resterait entière.
+
+Autre piège : `.section-title` ne doit être posée que sur un vrai titre de section (marque le début d'un groupe de contenu). Ne pas la réutiliser pour un simple label inline au look "gras/discret" (ex: un `<span>` d'étiquette à côté d'un filtre) — ça hérite alors du `margin-top:32px` pensé pour un titre de bloc, incohérent sur un élément en ligne ; utiliser `.form-label` pour ce cas (déjà le motif attendu pour un label, voir tableau des boutons/badges plus haut).
+
 ## Accessibilité de base — attendue dès la conception, pas seulement au moment d'un audit
 
 Ces motifs doivent être appliqués **au moment où le composant est créé**, comme le reste des conventions ci-dessus — ce ne sont pas des corrections à faire après coup. `accessibilite-rgaa-squadra` reste l'audit formel de conformité RGAA (numéros de critères, rapport chiffré) ; ce qui suit est la base minimale attendue en continu, indépendamment de tout audit.
@@ -60,6 +78,7 @@ Ces motifs doivent être appliqués **au moment où le composant est créé**, c
 5. Vérifier la fiabilité en entrée : les champs qui doivent être obligatoires le sont réellement côté JS (`main.js`, ex: `saveConsultant()`, `savePrestation()`), pas juste visuellement suggérés.
 6. Vérifier chaque motif du tableau "Accessibilité de base" ci-dessus sur les composants concernés (boutons icône, toasts, groupes de filtres, onglets, zones scrollables custom, champs obligatoires, erreurs de validation, labels de formulaire, en-têtes de tableau, titres de section, informations portées par une couleur).
 7. Vérifier la typographie : tout `font-size` (CSS ou inline) sur du code touché par la tâche en cours doit utiliser un token `--text-*` de `tokens.css`, pas une valeur px/rem arbitraire. La migration complète étant terminée (2026-08-29), tout `font-size` en px trouvé n'importe où dans le projet — pas seulement le fichier touché — est une régression à corriger immédiatement, pas une dette à différer.
+8. Vérifier la hiérarchie visuelle des titres (H1/H2/H3, voir tableau et règle d'espacement "Hiérarchie visuelle des titres" ci-dessus) : chaque titre structurant réel utilise bien `<h2>`/`<h3 class="section-title">` (pas un `<div>`/`<span>` stylé) ; seul le tout premier titre de la page/modale a `margin-top:0` en inline (pas chaque sous-bloc/zone qui suit — sinon un espace de 32px manque là où il devrait marquer une nouvelle section) ; aucun `border-top` n'accompagne un titre ou le bloc juste avant lui (l'espacement seul doit porter la séparation) ; `.section-title` n'est pas réutilisée sur un simple label inline (ex: `.form-label` attendu à la place).
 
 ## Corrections automatiques
 

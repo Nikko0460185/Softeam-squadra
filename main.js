@@ -23,6 +23,10 @@ let modalWonCandidatureId = null; // set par markCandidatureWonInModal(), consom
 let modalMissionEvents = []; // [{id, type: 'prolongation'|'pause'|'sortie_anticipee', date, resumeDate?}]
 let prestModalSnapshot = null; // état du formulaire à l'ouverture, pour détecter une saisie non enregistrée (cancelPrestModal())
 let oppModalSnapshot = null; // idem, pour la modale Opportunité (cancelOpportuniteModal())
+// Prestation/Opportunité actuellement affichées dans "Suivre la demande" (null si le bloc
+// correspondant n'existe pas pour cette demande) — voir openSuiviDemande().
+let suiviDemandePrest = null;
+let suiviDemandeOpp   = null;
 let statsPeriod = 'quarterly'; // 'quarterly' | '5y' | '10y' — pilote les tableaux/graphiques du bas de la vue Statistiques
 
 // Navigation dédiée au graphique "Chiffre d'affaires & Marge" (indépendante de statsPeriod)
@@ -481,10 +485,15 @@ function renderGantt() {
   // que sur ~1 écran de large, puis "décrochait" et défilait comme le reste — et les barres,
   // positionnées en % de .gantt-timeline, se calculaient sur cette même largeur trop étroite au
   // lieu des 36 mois réels, donc la ligne entière (nom + barres) disparaissait au-delà. Fixer la
-  // largeur du wrapper au total réel (colonne des noms + 36 mois) règle les deux à la source.
+  // largeur du wrapper au total réel (colonne des noms + 36 mois) règle les deux à la source —
+  // mais seulement quand ce total dépasse l'écran : sinon la largeur en pixels écraserait
+  // min-width:100% et empêcherait l'en-tête de remplir tout le conteneur sur un grand écran.
+  const wrapperEl = document.getElementById('gantt-wrapper');
   const labelColWidth = document.getElementById('gantt-label-col').offsetWidth;
   const colW = ganttColWidth();
-  document.getElementById('gantt-wrapper').style.width = (labelColWidth + colW * GANTT_MONTHS) + 'px';
+  const contentWidth = labelColWidth + colW * GANTT_MONTHS;
+  const availableWidth = document.getElementById('gantt-scroll').clientWidth;
+  wrapperEl.style.width = contentWidth > availableWidth ? contentWidth + 'px' : '';
   const rowsData = ganttRowsData();
   const rows = document.getElementById('gantt-rows');
   rows.innerHTML = '';
@@ -543,8 +552,8 @@ function renderGantt() {
           ? buildPipelineTooltip(p)
           : buildTooltip(p, S.consultants.find(x => x.id === p.consultantId));
         const onClick = p.kind === 'pipeline'
-          ? () => openOpportuniteModal(S.opportunites.find(o => o.id === p.oppId))
-          : () => openPrestModal(S.prestations.find(x => x.id === pId));
+          ? () => openSuiviDemande(null, S.opportunites.find(o => o.id === p.oppId))
+          : () => openSuiviDemande(S.prestations.find(x => x.id === pId), null);
         // Statut calculé pour une vraie prestation ; les items pipeline gardent leur statut
         // littéral 'pipeline' (fixé par pipelineItemFrom*()), pas de date à comparer pour eux.
         const barStatus = p.kind === 'pipeline' ? p.status : prestationStatus(p);
@@ -796,7 +805,7 @@ function prestationToRow(p, viewMode) {
     valueLine: `${tjmCur.toLocaleString('fr-FR')} €/j${hasRevision?`<small>base: ${p.tjm.toLocaleString('fr-FR')} €</small>`:''}`,
     activiteLine: `${(p.fte||5)}/5`,
     alertLine,
-    onClick: `openPrestModal(S.prestations.find(x=>x.id==='${p.id}'))`,
+    onClick: `openSuiviDemande(S.prestations.find(x=>x.id==='${p.id}'), null)`,
   };
 }
 
@@ -835,7 +844,7 @@ function opportuniteToRow(opp, cands) {
     subLine: opp.clientService || '',
     dateLine,
     valueLine: '—', activiteLine: '—', alertLine: '',
-    onClick: `openOpportuniteModal(S.opportunites.find(x=>x.id==='${opp.id}'))`,
+    onClick: `openSuiviDemande(null, S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
 
@@ -852,7 +861,7 @@ function candidatureToRow(cand) {
     subLine: opp.clientService || '',
     ...oppDateInfo(opp),
     valueLine: '—', activiteLine: '—', alertLine: '',
-    onClick: `openOpportuniteModal(S.opportunites.find(x=>x.id==='${opp.id}'))`,
+    onClick: `openSuiviDemande(null, S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
 
@@ -1060,7 +1069,7 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
 
   const div = document.createElement('div');
   div.innerHTML = `
-    <h3 class="section-title" style="margin-bottom:10px;padding-top:4px">
+    <h3 class="section-title" style="margin-top:0">
       Activité · ${kpiLabel} · base ${kpiWorkDays} j/trimestre
     </h3>
     <div class="stats-grid" style="margin-bottom:20px">
@@ -1088,8 +1097,8 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
         <div class="stat-sub">Ouvertes actuellement · vrai pipeline (Opportunités)</div>
       </div>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-      <h3 class="section-title">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:32px;margin-bottom:10px">
+      <h3 class="section-title" style="margin-top:0">
         Chiffre d'affaires & Marge · ${chartRangeLabel}
       </h3>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1335,7 +1344,7 @@ function buildEventsDiv(cons, today) {
 
   upcoming.forEach(o => {
     const natureTxt = o.nature ? natureLabel(o.nature) : '';
-    evHtml += '<div class="event-row" style="cursor:pointer" onclick="openOpportuniteModal(S.opportunites.find(x=>x.id===\'' + o.id + '\'))">'
+    evHtml += '<div class="event-row" style="cursor:pointer" onclick="openSuiviDemande(null, S.opportunites.find(x=>x.id===\'' + o.id + '\'))">'
       + '<div class="event-dot" style="background:var(--purple)"></div>'
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:var(--text-base);font-weight:500">' + o.client + (o.clientService ? ' / '+o.clientService : '') + (o.titre ? ' — '+o.titre : '') + '</div>'
@@ -1564,7 +1573,6 @@ function renderStats() {
   // graphique CA & Marge au-dessus ont chacun leur propre navigation, indépendante de celui-ci.
   const detailHeader = document.createElement('div');
   detailHeader.className = 'section-title';
-  detailHeader.style.cssText = 'margin-bottom:8px;padding-top:6px;border-top:1px solid var(--border)';
   detailHeader.textContent = 'Détail par période';
   scroll.appendChild(detailHeader);
 
@@ -1572,7 +1580,7 @@ function renderStats() {
   toolbar.className = 'stats-toolbar';
   toolbar.style.cssText = 'border-bottom:none;padding:0 0 14px 0;background:none';
   toolbar.innerHTML = `
-    <span class="section-title">Échelle :</span>
+    <span class="form-label" style="margin-bottom:0">Échelle :</span>
     <button class="period-tab ${statsPeriod==='quarterly'?'active':''}" onclick="statsPeriod='quarterly';renderStats()">Par trimestre (an en cours)</button>
     <button class="period-tab ${statsPeriod==='5y'?'active':''}"        onclick="statsPeriod='5y';renderStats()">5 ans</button>
     <button class="period-tab ${statsPeriod==='10y'?'active':''}"       onclick="statsPeriod='10y';renderStats()">10 ans</button>`;
@@ -2149,9 +2157,15 @@ function openPrestModal(p, forceConsId) {
 
   // p sans opportuniteId : rien à dire tant qu'on ne sait pas si l'utilisateur va en attacher une
   // (cas d'une prestation en cours de création qui n'est pas issue d'une candidature gagnée).
-  if (!p) hideOriginBanner();
-  else if (p.opportuniteId) showOriginBannerLinked();
-  else showOriginBannerMuted();
+  // p existant (avec ou sans opportuniteId) : une prestation existante ne s'édite plus que via
+  // "Suivre la demande" (openSuiviDemande()) — jamais en modale de création directe. Le bandeau
+  // "Issue d'une opportunité" y serait redondant avec le bloc Opportunité affiché juste en
+  // dessous, et "Créée directement, sans opportunité au préalable" est désormais affiché dans la
+  // sous-info de la carte KPI "Profils engagés" (renderSuiviDemandeKpis()) — les deux cas sont
+  // donc masqués ici. showOriginBannerLinked() reste utilisée ailleurs
+  // (markCandidatureWonInModal(), juste après avoir gagné une candidature), dans le flux de
+  // création où l'Opportunité n'est pas visible.
+  hideOriginBanner();
 
   document.getElementById('ev-type').value = 'prolongation';
   updateEvTypeUI();
@@ -2408,6 +2422,8 @@ function updateBadges() {
   } else {
     lastEvtDisp.textContent = '';
   }
+
+  refreshSuiviDemandeIfOpen();
 }
 
 // Une révision porte un TJM et/ou un taux d'activité (au moins un des deux) + une date. Si une
@@ -2493,7 +2509,10 @@ function renderRevisions() {
   });
 }
 
-function savePrestation() {
+// Écrit l'état courant du formulaire (+ révisions, événements de mission) dans S, sans fermer
+// la modale. Retourne l'id de la prestation, ou null si la validation échoue. Symétrique à
+// commitOpportuniteFromForm().
+function commitPrestationFromForm() {
   const id           = document.getElementById('f-id').value;
   const consultantId = document.getElementById('f-cons').value;
   const client       = document.getElementById('f-client').value.trim();
@@ -2521,9 +2540,9 @@ function savePrestation() {
     missing.forEach(id => markFieldInvalid(id, 'Ce champ est obligatoire.'));
     showToast('Merci de compléter les champs obligatoires en surbrillance', 'error');
     document.getElementById(missing[0]).focus();
-    return false;
+    return null;
   }
-  if (endDate < startDate) { markFieldInvalid('f-end', 'La date de fin doit être après la date de début.'); showToast('La date de fin doit être après la date de début', 'error'); document.getElementById('f-end').focus(); return false; }
+  if (endDate < startDate) { markFieldInvalid('f-end', 'La date de fin doit être après la date de début.'); showToast('La date de fin doit être après la date de début', 'error'); document.getElementById('f-end').focus(); return null; }
 
   const opportuniteId = document.getElementById('f-opportunite-id').value || undefined;
 
@@ -2547,13 +2566,18 @@ function savePrestation() {
     if (cand) {
       cand.status = 'gagnee';
       cand.prestationId = prest.id;
-      const opp = S.opportunites.find(o => o.id === cand.opportuniteId);
-      if (opp) opp.status = 'pourvu';
+      recomputeOpportuniteStatus(cand.opportuniteId);
     }
     modalWonCandidatureId = null;
   }
 
   save();
+  return prest.id;
+}
+
+function savePrestation() {
+  const id = commitPrestationFromForm();
+  if (id === null) return false;
   closeModal('prest-overlay');
   render();
   showToast('Prestation enregistrée', 'success');
@@ -2564,42 +2588,45 @@ function showOriginBannerLinked() {
   const b = document.getElementById('prest-origin-banner');
   b.className = 'modal-info-banner';
   b.style.display = '';
-  b.innerHTML = `<span>Issue d'une opportunité</span>
-    <button type="button" class="btn-add-small" onclick="viewOriginOpportunite()">Voir l'opportunité d'origine</button>`;
-}
-function showOriginBannerMuted() {
-  const b = document.getElementById('prest-origin-banner');
-  b.className = 'modal-info-banner modal-info-banner-muted';
-  b.style.display = '';
-  b.innerHTML = `<span>Créée directement, sans opportunité au préalable</span>`;
+  b.innerHTML = `<span>Issue d'une opportunité</span>`;
 }
 function hideOriginBanner() {
   document.getElementById('prest-origin-banner').style.display = 'none';
 }
 
-function viewOriginOpportunite() {
-  const oppId = document.getElementById('f-opportunite-id').value;
-  if (!oppId) return;
-  if (document.getElementById('f-id').value) {
-    // Prestation déjà existante : on enregistre les modifs en cours avant de naviguer.
-    if (!savePrestation()) return;
-  } else {
-    // Prestation en cours de création, jamais encore enregistrée (cas juste après avoir gagné
-    // une candidature) : rien de réel à sauvegarder, on referme simplement sans valider le
-    // formulaire — sinon la validation des dates/TJM bloquerait l'accès à l'opportunité.
-    closeModal('prest-overlay');
-    render();
-  }
+// Recalcule le statut d'une opportunité à partir de la composition réelle de ses candidatures
+// (règle documentée dans BACKLOG.md : granularité simplifiée à 3 valeurs) — partagé entre
+// commitOpportuniteFromForm() et toute mutation directe de S.candidatures (ex: deletePrestation()
+// qui détache une candidature gagnée). Sans aucune candidature, ne touche pas au statut : c'est
+// alors le champ Statut du formulaire qui fait foi.
+function recomputeOpportuniteStatus(oppId) {
   const opp = S.opportunites.find(o => o.id === oppId);
-  if (opp) openOpportuniteModal(opp);
+  if (!opp) return;
+  const cands = S.candidatures.filter(c => c.opportuniteId === oppId);
+  if (!cands.length) return;
+  if (cands.some(c => c.status === 'gagnee')) opp.status = 'pourvu';
+  else if (cands.every(c => c.status === 'perdue')) opp.status = 'abandonne';
+  else opp.status = 'ouvert';
 }
 
 function deletePrestation() {
   const id = document.getElementById('f-id').value;
-  if (!id || !confirm('Supprimer cette prestation ?')) return;
+  if (!id) return;
+  // Une prestation supprimée peut être celle d'une candidature gagnée : sans ce détachement,
+  // la candidature restait "gagnée" avec un prestationId pointant vers une prestation qui
+  // n'existe plus (bug latent constaté en explorant ce code).
+  const linkedCand = S.candidatures.find(c => c.prestationId === id);
+  const msg = 'Supprimer définitivement cette prestation ? Cette action est irréversible et ne peut pas être annulée.'
+    + (linkedCand ? ' La candidature gagnée associée à cette mission repassera "en attente".' : '');
+  if (!confirm(msg)) return;
+  if (linkedCand) {
+    linkedCand.status = 'en_attente';
+    delete linkedCand.prestationId;
+    recomputeOpportuniteStatus(linkedCand.opportuniteId);
+  }
   S.prestations = S.prestations.filter(p => p.id !== id);
   save();
-  closeModal('prest-overlay');
+  closeSuiviDemande();
   render();
   showToast('Prestation supprimée');
 }
@@ -2781,22 +2808,7 @@ function commitOpportuniteFromForm() {
   // les lignes sans consultant choisi (brouillon abandonné) sont ignorées.
   const kept = modalCandidatures.filter(c => c.consultantId);
 
-  // Dès qu'il y a au moins une candidature, le statut de l'opportunité se déduit de leur
-  // composition plutôt que de se déclarer à la main (simplification volontaire — la nuance
-  // "perdue par le consultant" vs "perdue par le client" est mise de côté pour l'instant, voir
-  // BACKLOG.md) : une candidature gagnée suffit à la rendre gagnée ; toutes perdues la rendent
-  // perdue ; dès qu'une candidature active (en attente) existe à nouveau, elle redevient
-  // ouverte automatiquement — pas besoin de repasser le statut à la main après un nouvel ajout.
-  // Sans aucune candidature, le champ Statut du formulaire reste la seule source (ex : une
-  // opportunité abandonnée avant même qu'un candidat n'ait été proposé).
-  let finalStatus = status;
-  if (kept.length > 0) {
-    if (kept.some(c => c.status === 'gagnee')) finalStatus = 'pourvu';
-    else if (kept.every(c => c.status === 'perdue')) finalStatus = 'abandonne';
-    else finalStatus = 'ouvert';
-  }
-
-  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, limiteUOAn, createdAt, status: finalStatus };
+  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, limiteUOAn, createdAt, status };
   if (id) {
     const i = S.opportunites.findIndex(o => o.id === id);
     if (i >= 0) S.opportunites[i] = opp;
@@ -2806,6 +2818,16 @@ function commitOpportuniteFromForm() {
 
   S.candidatures = S.candidatures.filter(c => c.opportuniteId !== oppId)
     .concat(kept.map(c => ({ ...c, opportuniteId: oppId })));
+
+  // Dès qu'il y a au moins une candidature, le statut de l'opportunité se déduit de leur
+  // composition plutôt que de se déclarer à la main (simplification volontaire — la nuance
+  // "perdue par le consultant" vs "perdue par le client" est mise de côté pour l'instant, voir
+  // BACKLOG.md) : une candidature gagnée suffit à la rendre gagnée ; toutes perdues la rendent
+  // perdue ; dès qu'une candidature active (en attente) existe à nouveau, elle redevient
+  // ouverte automatiquement — pas besoin de repasser le statut à la main après un nouvel ajout.
+  // Sans aucune candidature, le champ Statut du formulaire (déjà écrit ci-dessus) reste la seule
+  // source (ex : une opportunité abandonnée avant même qu'un candidat n'ait été proposé).
+  recomputeOpportuniteStatus(oppId);
 
   save();
   return oppId;
@@ -2823,13 +2845,12 @@ function deleteOpportunite() {
   const id = document.getElementById('of-id').value;
   if (!id) return;
   const nb = S.candidatures.filter(c=>c.opportuniteId===id).length;
-  const msg = nb > 0
-    ? `Cette opportunité a ${nb} candidature(s) associée(s). Supprimer quand même ?`
-    : 'Supprimer cette opportunité ?';
+  const msg = 'Supprimer définitivement cette opportunité ? Cette action est irréversible et ne peut pas être annulée.'
+    + (nb > 0 ? ` Ses ${nb} candidature(s) associée(s) seront supprimées avec elle.` : '');
   if (!confirm(msg)) return;
   S.candidatures = S.candidatures.filter(c=>c.opportuniteId!==id);
   S.opportunites = S.opportunites.filter(o=>o.id!==id);
-  save(); closeModal('opportunite-overlay'); render();
+  save(); closeSuiviDemande(); render();
   showToast('Opportunité supprimée');
 }
 
@@ -2838,6 +2859,7 @@ function renderOpportuniteCandidatures() {
   const el = document.getElementById('opp-candidatures-list');
   if (!modalCandidatures.length) {
     el.innerHTML = `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:6px 0 10px">Aucun candidat pour l'instant.</div>`;
+    refreshSuiviDemandeIfOpen();
     return;
   }
   const usedConsIds = modalCandidatures.map(c => c.consultantId).filter(Boolean);
@@ -2854,12 +2876,14 @@ function renderOpportuniteCandidatures() {
             .map(c => `<option value="${c.id}" ${c.id===cand.consultantId?'selected':''}>${c.name}</option>`).join('')}
         </select>`;
 
+    // Résumé lecture seule uniquement : le bloc Prestation complet est déjà affiché juste
+    // au-dessus dans "Suivre la demande" dès que l'opportunité est gagnée, pas besoin d'un
+    // 2e accès pour le modifier ici.
     const missionBlock = (cand.status==='gagnee' && cand.prestationId && S.prestations.find(p=>p.id===cand.prestationId))
       ? (() => { const p = S.prestations.find(x=>x.id===cand.prestationId); const pStatus = prestationStatus(p); return `
         <div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:var(--text-sm);color:var(--text-dim)">
           <span class="status-pill pill-${pStatus}">${statusLabel(pStatus)}</span>
           <span>${fmtD(p.startDate)} → ${fmtD(p.endDate)} · ${currentTjm(p).toLocaleString('fr-FR')} €/j</span>
-          <button class="btn-add-small" style="padding:2px 8px;font-size:var(--text-xs);margin-left:auto" onclick="editMissionFromOpportunite('${p.id}')">Modifier la mission</button>
         </div>`; })()
       : '';
 
@@ -2917,6 +2941,7 @@ function renderOpportuniteCandidatures() {
         </div>
       </div>`;
   }).join('');
+  refreshSuiviDemandeIfOpen();
 }
 
 function addCandidatureInModal() {
@@ -2995,7 +3020,11 @@ function markCandidatureWonInModal(candId) {
   if (!cand || !cand.consultantId) return;
   const oppId = commitOpportuniteFromForm();
   if (oppId === null) return;
-  closeModal('opportunite-overlay');
+  // L'opportunité peut être éditée seule (création, pas encore de mission) ou depuis "Suivre
+  // la demande" (édition) — dans ce 2e cas c'est cet overlay qu'il faut fermer, pas
+  // opportunite-overlay dont la classe .open a déjà été retirée par openSuiviDemande().
+  if (document.getElementById('opportunite-modal-box').classList.contains('suivi-demande-embedded')) closeSuiviDemande();
+  else closeModal('opportunite-overlay');
   render();
   const opp = S.opportunites.find(o => o.id === oppId);
   // Ordre important : modalWonCandidatureId doit être fixé APRÈS l'appel à openPrestModal,
@@ -3025,11 +3054,524 @@ function markCandidatureWonInModal(candId) {
   prestModalSnapshot = prestFormState();
 }
 
-function editMissionFromOpportunite(prestId) {
-  if (commitOpportuniteFromForm() === null) return;
-  closeModal('opportunite-overlay');
+// ─── SUIVRE LA DEMANDE — fusion Prestation/Opportunité en overlay plein écran ─────────────
+// N'édite jamais de champs dupliqués : les boîtes #prest-modal-box / #opportunite-modal-box
+// sont déplacées (reparenting) depuis leurs overlays respectifs vers cet overlay le temps de
+// l'édition, puis restituées à la fermeture — openPrestModal()/openOpportuniteModal() et tout
+// ce qui lit les champs f-*/of-* continuent de fonctionner sans modification, y compris pour
+// les modales de création (jamais concernées par cette fusion).
+function openSuiviDemande(prest, opp) {
+  // Capturé avant tout appel à openPrestModal()/openOpportuniteModal() : ces 2 fonctions
+  // (et openModalA11y() qu'elles appellent) réécrivent modalTrigger avec le focus interne à
+  // leur propre modale, pas avec le vrai déclencheur de "Suivre la demande" — restauré en fin
+  // de fonction pour que le focus revienne au bon endroit à la fermeture.
+  const trigger = document.activeElement;
+  if (prest && !opp && prest.opportuniteId) {
+    opp = S.opportunites.find(o => o.id === prest.opportuniteId);
+  }
+  if (opp && !prest) {
+    const wonCand = S.candidatures.find(c =>
+      c.opportuniteId === opp.id && c.status === 'gagnee' && c.prestationId);
+    // wonCand.prestationId peut pointer vers une prestation supprimée entre-temps (via une
+    // ancienne donnée) — find() défensif, dégrade proprement (traité comme non gagnée).
+    if (wonCand) prest = S.prestations.find(p => p.id === wonCand.prestationId) || null;
+  }
+
+  if (prest) openPrestModal(prest);
+  if (opp)   openOpportuniteModal(opp);
+  // Neutralise les .open individuels posés par les 2 appels ci-dessus : un seul overlay
+  // "ouvert" doit exister à la fois pour que le piège de focus cible sans ambiguïté.
+  document.getElementById('prest-overlay').classList.remove('open');
+  document.getElementById('opportunite-overlay').classList.remove('open');
+
+  const prestSlot = document.getElementById('sd-prest-slot');
+  const oppSlot    = document.getElementById('sd-opp-slot');
+  const prestSection = document.getElementById('sd-prest-section');
+  const oppSection    = document.getElementById('sd-opp-section');
+  prestSlot.innerHTML = '';
+  oppSlot.innerHTML = '';
+  if (prest) {
+    const box = document.getElementById('prest-modal-box');
+    box.classList.add('suivi-demande-embedded');
+    prestSlot.appendChild(box);
+    prestSection.style.display = '';
+  } else {
+    prestSection.style.display = 'none';
+  }
+  if (opp) {
+    const box = document.getElementById('opportunite-modal-box');
+    box.classList.add('suivi-demande-embedded');
+    oppSlot.appendChild(box);
+    oppSection.style.display = '';
+  } else {
+    oppSection.style.display = 'none';
+  }
+
+  suiviDemandePrest = prest || null;
+  suiviDemandeOpp   = opp || null;
+  renderSuiviDemandeKpis(suiviDemandePrest, suiviDemandeOpp);
+  renderSuiviDemandeTimeline(suiviDemandePrest, suiviDemandeOpp);
+
+  document.getElementById('suivi-demande-overlay').classList.add('open');
+  openModalA11y('suivi-demande-overlay');
+  modalTrigger = trigger;
+}
+
+// Restitue les 2 boîtes à leur overlay d'origine avant de masquer "Suivre la demande" —
+// indispensable pour que la prochaine modale de création (Nouvelle prestation/opportunité)
+// retrouve sa boîte à sa place habituelle. Appelée sur tous les chemins de sortie (Annuler,
+// Échap, clic hors modale, Enregistrer, Supprimer).
+function closeSuiviDemande() {
+  const prestBox = document.getElementById('prest-modal-box');
+  const oppBox   = document.getElementById('opportunite-modal-box');
+  prestBox.classList.remove('suivi-demande-embedded');
+  oppBox.classList.remove('suivi-demande-embedded');
+  document.getElementById('prest-overlay').appendChild(prestBox);
+  document.getElementById('opportunite-overlay').appendChild(oppBox);
+  suiviDemandePrest = null;
+  suiviDemandeOpp   = null;
+  closeModal('suivi-demande-overlay');
+}
+
+function cancelSuiviDemande() {
+  const prestDirty = suiviDemandePrest && prestFormState() !== prestModalSnapshot;
+  const oppDirty    = suiviDemandeOpp   && oppFormState()   !== oppModalSnapshot;
+  if ((prestDirty || oppDirty) && !confirm('Des modifications non enregistrées seront perdues. Annuler quand même ?')) return;
+  closeSuiviDemande();
+}
+
+function saveSuiviDemande() {
+  if (suiviDemandePrest && commitPrestationFromForm() === null) return;
+  if (suiviDemandeOpp   && commitOpportuniteFromForm() === null) return;
+  closeSuiviDemande();
   render();
-  openPrestModal(S.prestations.find(p => p.id === prestId));
+  showToast('Demande enregistrée', 'success');
+}
+
+// [d1, d2) en jours ouvrés (lundi-vendredi uniquement, pas de jours fériés — même niveau de
+// précision que le reste de l'app, qui ne les modélise pas non plus).
+function businessDaysBetween(d1, d2) {
+  if (!d1 || !d2 || d2 <= d1) return 0;
+  let n = 0;
+  for (let d = new Date(d1 + 'T00:00:00'); d < new Date(d2 + 'T00:00:00'); d.setDate(d.getDate() + 1)) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) n++;
+  }
+  return n;
+}
+
+// Découpe la mission en segments atomiques : une rupture à chaque changement de TJM/taux
+// d'activité (modalRevisions) ET à chaque révision de coût complet du consultant
+// (consultant.coutCompletRevisions) — les 2 listes de dates sont fusionnées, pas seulement
+// celle du TJM. Avant ce découpage, une révision de coût tombant au milieu d'un segment TJM
+// n'était prise en compte qu'au segment TJM suivant, pas à sa vraie date (bug corrigé le
+// 2026-09-16). Réutilisée par computeMissionCaExact() et computeMissionCaSparklineData().
+function buildMissionCaAtomicSegments() {
+  const startDate = document.getElementById('f-start').value;
+  if (!startDate) return null;
+  const endEvts = modalMissionEvents.filter(e => e.type === 'prolongation' || e.type === 'sortie_anticipee');
+  const effEnd  = endEvts.length ? endEvts[endEvts.length - 1].date : document.getElementById('f-end').value;
+  const consultant = S.consultants.find(c => c.id === document.getElementById('f-cons').value);
+
+  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || undefined;
+  const baseFte = parseInt(document.getElementById('f-fte').value) || undefined;
+  const tariffRows = [{ date: startDate, tjm: baseTjm, fte: baseFte }, ...modalRevisions]
+    .slice().sort((a, b) => a.date.localeCompare(b.date));
+
+  const coutDates = consultant ? (consultant.coutCompletRevisions || []).map(r => r.date).filter(d => d >= startDate) : [];
+  const breakDates = Array.from(new Set([startDate, ...tariffRows.map(r => r.date), ...coutDates])).sort();
+
+  let curTjm = baseTjm, curFte = baseFte;
+  const segments = [];
+  for (let i = 0; i < breakDates.length; i++) {
+    const segStart = breakDates[i];
+    tariffRows.filter(r => r.date === segStart).forEach(r => {
+      if (r.tjm !== undefined) curTjm = r.tjm;
+      if (r.fte !== undefined) curFte = r.fte;
+    });
+    const segEnd  = i + 1 < breakDates.length ? breakDates[i + 1] : (effEnd || todayStr());
+    const curCout = consultant ? currentCoutComplet(consultant, segStart) : 0;
+    segments.push({ start: segStart, end: segEnd, tjm: curTjm, fte: curFte, cout: curCout });
+  }
+  return { segments, effEnd, startDate, consultant };
+}
+
+// Somme CA/coût sur les segments atomiques jusqu'à une date, en retirant les jours de pause —
+// même logique que l'ancien computeUpTo() interne de computeMissionCaExact(), mais itère les
+// segments déjà découpés par buildMissionCaAtomicSegments() plutôt que les seules révisions TJM.
+function sumMissionCaSegments(segData, uptoDate) {
+  if (!uptoDate) return { ca: 0, cout: 0 };
+  const { segments, effEnd } = segData;
+  const pauses = modalMissionEvents.filter(e => e.type === 'pause')
+    .map(e => ({ start: e.date, end: e.resumeDate || effEnd || todayStr() }));
+  let ca = 0, cout = 0;
+  for (const seg of segments) {
+    if (seg.start >= uptoDate) break;
+    const clippedEnd = seg.end > uptoDate ? uptoDate : seg.end;
+
+    let workStart = seg.start;
+    let segBizDays = 0;
+    const segPauses = pauses.filter(p => p.start < clippedEnd && p.end > seg.start)
+      .sort((a, b) => a.start.localeCompare(b.start));
+    segPauses.forEach(p => {
+      const pStart = p.start < seg.start ? seg.start : p.start;
+      segBizDays += businessDaysBetween(workStart, pStart);
+      workStart = p.end > clippedEnd ? clippedEnd : p.end;
+    });
+    segBizDays += businessDaysBetween(workStart, clippedEnd);
+
+    ca   += (seg.tjm || 0) * segBizDays * (seg.fte || 5) / 5;
+    cout += seg.cout        * segBizDays * (seg.fte || 5) / 5;
+  }
+  return { ca, cout };
+}
+
+// CA/marge exacts de la mission en cours d'édition — même signature/retour qu'avant, calcul
+// interne désormais basé sur buildMissionCaAtomicSegments()/sumMissionCaSegments() (segmentation
+// fine TJM + coût complet, pas d'approximation sur une période plate).
+function computeMissionCaExact() {
+  const segData = buildMissionCaAtomicSegments();
+  if (!segData) return null;
+  const today = todayStr();
+  const realise = sumMissionCaSegments(segData, segData.effEnd && segData.effEnd < today ? segData.effEnd : today);
+  const total   = segData.effEnd ? sumMissionCaSegments(segData, segData.effEnd) : null;
+  return {
+    caRealise: realise.ca,
+    margePctRealise: realise.ca ? Math.round((realise.ca - realise.cout) / realise.ca * 100) : null,
+    caPrevisionnel: total ? total.ca : null,
+  };
+}
+
+// Points pour la sparkline CA/marge de la carte KPI "CA" : CA cumulé à chaque frontière de
+// segment (ligne pleine), et taux de marge propre à chaque segment (ligne en paliers — saute à
+// chaque révision de TJM/taux d'activité OU de coût complet, pas une moyenne lissée).
+function computeMissionCaSparklineData() {
+  const segData = buildMissionCaAtomicSegments();
+  if (!segData) return null;
+  const horizon = segData.effEnd || todayStr();
+  const relevantSegs = segData.segments.filter(s => s.start < horizon)
+    .map(s => ({ ...s, end: s.end > horizon ? horizon : s.end }));
+  if (!relevantSegs.length) return null;
+
+  const boundaries = Array.from(new Set([...relevantSegs.map(s => s.start), horizon])).sort();
+  const caPoints = boundaries.map(d => ({ date: d, caCum: sumMissionCaSegments(segData, d).ca }));
+  const margeSteps = relevantSegs.map(s => ({
+    start: s.start, end: s.end,
+    marginPct: s.tjm ? Math.round((s.tjm - s.cout) / s.tjm * 100) : null,
+  }));
+  return { caPoints, margeSteps, startDate: segData.startDate, horizon };
+}
+
+// Sparkline CA (ligne pleine) + marge (ligne pointillée) — même précédent de style que
+// buildCaChart() (masse salariale en var(--orange) pointillé) : pas de couleur inventée. Pas
+// d'axe/légende/titre ("indicateur de pilotage, pas un compte-rendu") ; aria-hidden car les
+// valeurs qu'elle illustre (CA réalisé, marge, prévisionnel) sont déjà en texte dans la carte.
+function buildCaSparklineSvg(sparkData) {
+  if (!sparkData) return '';
+  const { caPoints, margeSteps, startDate, horizon } = sparkData;
+  const W = 200, H = 24, PAD = 2;
+  const t0 = new Date(startDate + 'T00:00:00').getTime();
+  const t1 = new Date(horizon + 'T00:00:00').getTime();
+  const span = Math.max(1, t1 - t0);
+  const xPx = d => PAD + ((new Date(d + 'T00:00:00').getTime() - t0) / span) * (W - 2 * PAD);
+
+  const caMax = Math.max(...caPoints.map(p => p.caCum), 1);
+  const yCa = v => H - PAD - (v / caMax) * (H - 2 * PAD);
+  const caPath = caPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xPx(p.date).toFixed(1)} ${yCa(p.caCum).toFixed(1)}`).join(' ');
+
+  const margeVals = margeSteps.map(s => s.marginPct).filter(v => v !== null);
+  const mMin = margeVals.length ? Math.min(...margeVals, 0) : 0;
+  const mMax = margeVals.length ? Math.max(...margeVals, 1) : 1;
+  const yMarge = v => H - PAD - ((v - mMin) / ((mMax - mMin) || 1)) * (H - 2 * PAD);
+  let margePath = '';
+  margeSteps.forEach(s => {
+    if (s.marginPct === null) return;
+    const x1 = xPx(s.start), x2 = xPx(s.end), y = yMarge(s.marginPct);
+    margePath += `${margePath ? ' L' : 'M'} ${x1.toFixed(1)} ${y.toFixed(1)} L ${x2.toFixed(1)} ${y.toFixed(1)}`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block" aria-hidden="true" focusable="false">
+    <path d="${caPath}" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="${margePath}" fill="none" stroke="var(--orange)" stroke-width="1.2" stroke-dasharray="2,2"/>
+  </svg>`;
+}
+
+// Nombre de mois entiers entre 2 dates (jour du mois pas encore atteint = mois incomplet, pas
+// arrondi au supérieur) et sa mise en forme "X mois" / "Y an(s)[, Z mois]" — carte KPI "Statut".
+function monthsBetween(d1, d2) {
+  const a = new Date(d1 + 'T00:00:00'), b = new Date(d2 + 'T00:00:00');
+  let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (b.getDate() < a.getDate()) months--;
+  return Math.max(0, months);
+}
+function formatDuration(months) {
+  if (months < 12) return `${months} mois`;
+  const years = Math.floor(months / 12), rem = months % 12;
+  return rem === 0 ? `${years} an${years > 1 ? 's' : ''}` : `${years} an${years > 1 ? 's' : ''}, ${rem} mois`;
+}
+// Format JJ/MM/AAAA — uniquement pour la carte KPI "Statut" (demande explicite) ; fmtD() (format
+// "12 mars 26") reste inchangée partout ailleurs, y compris dans la frise de "Suivre la demande".
+function fmtDNum(d) {
+  if (!d) return '—';
+  const [y, m, day] = d.split('-');
+  return `${day}/${m}/${y}`;
+}
+
+// Statut/date de fin/durée/jours restants "live" de la mission en cours d'édition — même
+// logique que updateBadges() (statut calculé, pas stocké), mais sur les champs du formulaire
+// plutôt que sur l'objet prest (qui peut être obsolète pendant l'édition). Carte KPI "Statut".
+function computeSuiviDemandeStatus() {
+  const startDate = document.getElementById('f-start').value;
+  const endDate    = document.getElementById('f-end').value;
+  const endEvts    = modalMissionEvents.filter(e => e.type === 'prolongation' || e.type === 'sortie_anticipee');
+  const effEnd     = endEvts.length ? endEvts[endEvts.length - 1].date : endDate;
+  const today      = todayStr();
+  const pauseNow   = modalMissionEvents.find(e => e.type === 'pause' && e.date <= today && (!e.resumeDate || e.resumeDate > today));
+
+  let statusKey = 'en_cours', label = 'En cours';
+  if (pauseNow) { statusKey = 'en_pause'; label = 'En pause'; }
+  else if (effEnd && effEnd < today) { statusKey = 'terminee'; label = 'Terminée'; }
+
+  const totalMonths   = startDate && effEnd ? monthsBetween(startDate, effEnd) : null;
+  const joursRestants = effEnd ? Math.round((new Date(effEnd + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000) : null;
+  return { statusKey, label, effEnd, totalMonths, joursRestants };
+}
+
+// TJM/taux d'activité courants — même calcul que updateBadges() (main.js), carte KPI "TJM".
+function computeSuiviDemandeTjm() {
+  const baseTjm = parseFloat(document.getElementById('f-tjm').value) || null;
+  const baseFte = parseInt(document.getElementById('f-fte').value) || null;
+  const tjmRevs = modalRevisions.filter(r => r.tjm !== undefined);
+  const fteRevs = modalRevisions.filter(r => r.fte !== undefined);
+  return {
+    curTjm: tjmRevs.length ? tjmRevs[tjmRevs.length - 1].tjm : baseTjm,
+    curFte: fteRevs.length ? fteRevs[fteRevs.length - 1].fte : baseFte,
+  };
+}
+
+// Délai envoi (push) → soutenance (si elle a eu lieu) → démarrage (si il a eu lieu), calculé sur
+// la candidature gagnée de l'opportunité. hasPrest indique si le démarrage réel (f-start) est
+// disponible — sans prestation, seul le délai envoi→soutenance peut être calculé.
+function computeDelaiReponse(hasPrest) {
+  const cand = modalCandidatures.find(c => c.status === 'gagnee');
+  if (!cand) return null;
+  const pushes = (cand.bookPushes || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const soutenances = (cand.soutenances || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const firstPush = pushes.length ? pushes[0].date : null;
+  const validees = soutenances.filter(s => s.resultat === 'validee');
+  const retenue = validees.length ? validees[validees.length - 1] : (soutenances.length ? soutenances[soutenances.length - 1] : null);
+  const demarrage = hasPrest ? (document.getElementById('f-start').value || null) : null;
+
+  const diffJ = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+  return {
+    delaiPushSoutenance:      (firstPush && retenue)   ? diffJ(firstPush, retenue.date) : null,
+    delaiSoutenanceDemarrage: (retenue && demarrage)   ? diffJ(retenue.date, demarrage) : null,
+    delaiPushDemarrageDirect: (!retenue && firstPush && demarrage) ? diffJ(firstPush, demarrage) : null,
+  };
+}
+
+// 5 cartes (Statut, TJM, Profils engagés, Délai de réponse, CA) dans .stats-grid.sd-kpis-grid —
+// largeurs inégales (styles/molecules/stat-card.css) plutôt que la grille fluide par défaut,
+// pour qu'aucune ligne ne revienne jamais à la ligne au milieu d'une phrase. Statut/TJM/CA ne
+// s'affichent que si `prest` existe ; Profils engagés/Délai de réponse que si `opp` existe.
+function renderSuiviDemandeKpis(prest, opp) {
+  const el = document.getElementById('sd-kpis');
+  const cards = [];
+
+  if (prest) {
+    const st = computeSuiviDemandeStatus();
+    const jr = st.joursRestants;
+    // Une mission Terminée n'affiche pas de compte à rebours (ni "restants", ni "depuis") —
+    // l'info est déjà portée par la pastille de statut elle-même.
+    const jrHtml = (jr === null || st.statusKey === 'terminee') ? ''
+      : `<div class="sd-kpi-jours-restants">${jr} jour${jr > 1 ? 's' : ''} restant${jr > 1 ? 's' : ''}</div>`;
+    cards.push(`<div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Statut</span></div>
+      <div class="stat-value"><span class="status-pill pill-${st.statusKey}">${st.label}</span></div>
+      <div class="stat-sub">Date de fin : ${fmtDNum(st.effEnd)}<br>Durée totale : ${st.totalMonths !== null ? formatDuration(st.totalMonths) : '—'}</div>
+      ${jrHtml}
+    </div>`);
+
+    const tjm = computeSuiviDemandeTjm();
+    cards.push(`<div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">TJM</span></div>
+      <div class="stat-value" style="color:var(--accent)">${tjm.curTjm ? tjm.curTjm.toLocaleString('fr-FR') + ' €/j' : '—'}</div>
+      <div class="stat-sub">Activité : ${tjm.curFte || '—'}/5</div>
+    </div>`);
+  }
+
+  // Toujours affichées, avec ou sans opportunité d'origine (y compris pour une prestation
+  // terminée).
+  {
+    // "Profils engagés" = nombre de profils distincts qui sont, ont été, ou seront en
+    // prestation pour cette demande — opportunité ou pas. prest.consultantId compte le profil
+    // actuellement staffé (y compris sans opportunité d'origine, ex: prestation créée
+    // directement) ; les candidatures avec un prestationId comptent tout autre profil déjà passé
+    // en prestation via cette opportunité (ex: staffing en équipe, plusieurs prestations issues
+    // de la même opportunité) — un Set évite de compter 2 fois le même consultant si les 2
+    // sources se recoupent (cas normal : le gagnant de l'opportunité EST le consultant de prest).
+    const staffedIds = new Set();
+    if (prest) staffedIds.add(prest.consultantId);
+    if (opp) modalCandidatures.filter(c => c.prestationId).forEach(c => staffedIds.add(c.consultantId));
+    const engages = staffedIds.size;
+    // Sous-info : toujours liée aux données de l'opportunité (pushs/soutenances), tous statuts
+    // confondus — n'existe tout simplement pas sans opportunité (rien à additionner).
+    const totalPushes = opp ? modalCandidatures.reduce((s, c) => s + (c.bookPushes || []).length, 0) : 0;
+    const totalSout   = opp ? modalCandidatures.reduce((s, c) => s + (c.soutenances || []).length, 0) : 0;
+    cards.push(`<div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Profils engagés</span></div>
+      <div class="stat-value">${engages} profil${engages > 1 ? 's' : ''}</div>
+      ${opp ? `<div class="stat-sub">${totalPushes} push${totalPushes > 1 ? 's' : ''} CV/Book<br>${totalSout} soutenance${totalSout > 1 ? 's' : ''}</div>` : ''}
+    </div>`);
+
+    const delai = opp ? computeDelaiReponse(!!prest) : null;
+    let total = null;
+    const lines = [];
+    if (delai) {
+      if (delai.delaiPushDemarrageDirect !== null) total = delai.delaiPushDemarrageDirect;
+      else if (prest && delai.delaiPushSoutenance !== null && delai.delaiSoutenanceDemarrage !== null) total = delai.delaiPushSoutenance + delai.delaiSoutenanceDemarrage;
+      else if (!prest && delai.delaiPushSoutenance !== null) total = delai.delaiPushSoutenance;
+      if (delai.delaiPushSoutenance !== null)      lines.push(`Envoi → soutenance : ${delai.delaiPushSoutenance} j`);
+      if (delai.delaiSoutenanceDemarrage !== null) lines.push(`Soutenance → démarrage : ${delai.delaiSoutenanceDemarrage} j`);
+    }
+    if (!opp) lines.push('Créée directement, sans opportunité au préalable');
+    cards.push(`<div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Délai de réponse</span></div>
+      <div class="stat-value">${total !== null ? total + ' j' : '—'}</div>
+      ${lines.map(l => `<div class="stat-sub">${l}</div>`).join('')}
+    </div>`);
+  }
+
+  if (prest) {
+    const ca = computeMissionCaExact();
+    if (ca) {
+      const spark = buildCaSparklineSvg(computeMissionCaSparklineData());
+      cards.push(`<div class="stat-card">
+        <div class="stat-label-row"><span class="stat-label">CA</span></div>
+        <div class="stat-value">${Math.round(ca.caRealise).toLocaleString('fr-FR')} €</div>
+        <div class="stat-sub">${ca.margePctRealise !== null ? `Marge : ${ca.margePctRealise}%` : ''}${ca.caPrevisionnel !== null ? `<br>CA prévisionnel : ${Math.round(ca.caPrevisionnel).toLocaleString('fr-FR')} €` : ''}</div>
+        ${spark ? `<div class="sd-kpi-sparkline">${spark}</div>` : ''}
+      </div>`);
+    }
+  }
+
+  el.innerHTML = cards.length ? `<div class="stats-grid sd-kpis-grid">${cards.join('')}</div>` : '';
+}
+
+// Point neutre "Détection" (opp.createdAt) + une ligne par candidat (bookPushes/soutenances
+// interclassés par date, puis réponse/démarrage/événements de mission/date de fin pour un
+// gagnant, ou arrêt à la réponse pour un perdant) — voir buildSuiviDemandeLane().
+// Démarrage → toutes les prolongations/pauses/sorties (modalMissionEvents est déjà trié par
+// date, addMissionEvent() : itérer dans l'ordre donne tout l'historique, pas seulement le
+// dernier événement comme le feraient effectiveEnd()/lastEndEvent()) → date de fin (ou "Sortie
+// indéfinie"). Partagé entre buildSuiviDemandeLane() (candidature gagnée) et
+// renderSuiviDemandeTimeline() (prestation créée directement, sans opportunité).
+function buildMissionTimelinePoints(prest) {
+  const points = [];
+  const startDate = document.getElementById('f-start').value;
+  if (startDate) points.push({ type: 'demarrage', date: startDate, label: 'Démarrage', color: 'var(--accent)' });
+
+  modalMissionEvents.forEach(e => points.push({
+    type: e.type, date: e.date, label: MISSION_EVENT_LABELS[e.type] || e.type,
+    color: e.type === 'prolongation' ? 'var(--orange)' : e.type === 'pause' ? 'var(--blue)' : 'var(--red)',
+  }));
+
+  const endEvts = modalMissionEvents.filter(e => e.type === 'prolongation' || e.type === 'sortie_anticipee');
+  const effEnd  = endEvts.length ? endEvts[endEvts.length - 1].date : document.getElementById('f-end').value;
+  points.push(effEnd
+    ? { type: 'fin', date: effEnd, label: 'Date de fin', color: 'var(--text-dim)' }
+    : { type: 'fin-indefinie', date: null, label: 'Sortie indéfinie', color: 'var(--text-muted)', undated: true });
+  return points;
+}
+
+function buildSuiviDemandeLane(cand, prest) {
+  const pushPts = (cand.bookPushes || []).map(p => ({ type: 'push', date: p.date, label: 'Push', color: 'var(--blue)' }));
+  const soutPts = (cand.soutenances || []).map(s => ({
+    type: 'soutenance', date: s.date, label: 'Soutenance',
+    color: s.resultat === 'validee' ? 'var(--green)' : s.resultat === 'refusee' ? 'var(--red)' : 'var(--blue)',
+  }));
+  const points = [...pushPts, ...soutPts].sort((a, b) => a.date.localeCompare(b.date));
+
+  if (cand.status === 'gagnee' || cand.status === 'perdue') {
+    const validees = (cand.soutenances || []).filter(s => s.resultat === 'validee').sort((a, b) => a.date.localeCompare(b.date));
+    const allSout  = (cand.soutenances || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const retenue  = validees.length ? validees[validees.length - 1] : (allSout.length ? allSout[allSout.length - 1] : null);
+    if (retenue) points.push({ type: 'reponse', date: retenue.date, label: 'Réponse', color: cand.status === 'gagnee' ? 'var(--green)' : 'var(--red)' });
+  }
+
+  if (cand.status === 'gagnee' && prest) points.push(...buildMissionTimelinePoints(prest));
+
+  return {
+    consultantId: cand.consultantId,
+    status: cand.status,
+    won: cand.status === 'gagnee',
+    firstPushDate: points.find(p => p.type === 'push' || p.type === 'soutenance')?.date || null,
+    points,
+  };
+}
+
+// Le(s) candidat(s) gagnant(s) toujours en premier ; les autres triés par date de leur 1er push
+// (le plus ancien en haut) — règle exacte demandée pour la frise.
+function sortSuiviDemandeLanes(lanes) {
+  return lanes.slice().sort((a, b) => {
+    if (a.won !== b.won) return a.won ? -1 : 1;
+    return (a.firstPushDate || '9999-99-99').localeCompare(b.firstPushDate || '9999-99-99');
+  });
+}
+
+function renderTimelinePoint(pt) {
+  return `<div class="sd-tl-point${pt.undated ? ' sd-tl-undated' : ''}">
+    <span class="sd-tl-dot" style="--dot-color:${pt.color}"></span>
+    <span class="sd-tl-label">${pt.label}</span>
+    ${pt.undated ? '' : `<span class="sd-tl-date">${fmtD(pt.date)}</span>`}
+  </div>`;
+}
+
+function renderTimelineLane(points, headerHtml, won) {
+  const pointsHtml = points.map(renderTimelinePoint).join('<div class="sd-tl-connector"></div>');
+  return `<div class="sd-timeline-lane${won ? ' sd-tl-lane-won' : ''}">
+    <div class="sd-tl-lane-head">${headerHtml}</div>
+    <div class="sd-tl-lane-points">${pointsHtml}</div>
+  </div>`;
+}
+
+// Frise chronologique de "Suivre la demande" : #sd-timeline, entre les KPI et le bloc
+// Prestation/Opportunité. Toujours affichée dès qu'il y a `prest` ou `opp` — avec `opp` : point
+// "Détection" + une ligne par candidat ; sans `opp` (prestation créée directement) : une seule
+// ligne, directement le cycle de la mission (démarrage → événements → fin), il y a assez de
+// données pour ça même sans opportunité en amont.
+function renderSuiviDemandeTimeline(prest, opp) {
+  const el = document.getElementById('sd-timeline');
+  if (!el) return;
+
+  if (!opp) {
+    if (!prest) { el.innerHTML = ''; return; }
+    const cons = S.consultants.find(c => c.id === document.getElementById('f-cons').value);
+    const headerHtml = `<span class="sd-tl-lane-name">${cons ? cons.name : 'Consultant supprimé'}</span>`;
+    el.innerHTML = `<div class="sd-timeline-lanes">${renderTimelineLane(buildMissionTimelinePoints(prest), headerHtml, true)}</div>`;
+    return;
+  }
+
+  const detectionHtml = `<div class="sd-tl-detection-row">${renderTimelinePoint({ label: 'Détection', date: opp.createdAt, color: 'var(--text-dim)' })}</div>`;
+
+  const lanes = sortSuiviDemandeLanes(
+    modalCandidatures.filter(c => c.consultantId).map(c => buildSuiviDemandeLane(c, prest))
+  );
+  const lanesHtml = lanes.map(lane => {
+    const cons = S.consultants.find(c => c.id === lane.consultantId);
+    const headerHtml = `<span class="sd-tl-lane-name">${cons ? cons.name : 'Consultant supprimé'}</span>
+      <span class="status-pill pill-cand-${lane.status}">${candidatureStatusLabel(lane.status)}</span>`;
+    return renderTimelineLane(lane.points, headerHtml, lane.won);
+  }).join('');
+
+  el.innerHTML = `${detectionHtml}<div class="sd-timeline-lanes">${lanesHtml}</div>`;
+}
+
+function refreshSuiviDemandeIfOpen() {
+  if (document.getElementById('suivi-demande-overlay').classList.contains('open')) {
+    renderSuiviDemandeKpis(suiviDemandePrest, suiviDemandeOpp);
+    renderSuiviDemandeTimeline(suiviDemandePrest, suiviDemandeOpp);
+  }
 }
 
 // ─── VUE LISTE — bascule Consultants ⇆ Clients ────────────────────────────────
@@ -3109,6 +3651,7 @@ function clearFieldErrors(ids) {
 const MODAL_CANCEL = {
   'prest-overlay': cancelPrestModal,
   'opportunite-overlay': cancelOpportuniteModal,
+  'suivi-demande-overlay': cancelSuiviDemande,
 };
 let modalTrigger = null;
 
@@ -3157,9 +3700,7 @@ function closeModal(overlayId) {
 }
 function overlayClick(e, id) {
   if (e.target.id !== id) return;
-  if (id === 'prest-overlay') { cancelPrestModal(); return; }
-  if (id === 'opportunite-overlay') { cancelOpportuniteModal(); return; }
-  closeModal(id);
+  (MODAL_CANCEL[id] || (() => closeModal(id)))();
 }
 
 // ─── CHART TOOLTIP (au clic) ─────────────────────────────────────────────────

@@ -23,3 +23,19 @@
 .trend-up   { color: var(--green); background: var(--green-soft); }
 .trend-down { color: var(--red);   background: var(--red-soft); }
 .trend-flat { color: var(--text-muted); background: var(--surface2); }
+
+/* KPI "Suivre la demande" (main.js renderSuiviDemandeKpis()) : largeurs inégales plutôt que la
+   grille fluide par défaut (.stats-grid seule, réutilisée par Statistiques) — Statut et CA les
+   plus larges, TJM le plus étroit, pour qu'aucune ligne ("Soutenance → démarrage : 11 j") ne
+   revienne jamais à la ligne. Repli en grille égale sous 900px (seuil réellement utilisé dans
+   le projet, voir tokens.css). */
+.sd-kpis-grid { grid-template-columns: 1.3fr 0.7fr 1fr 1.1fr 1.6fr; }
+@media (max-width: 900px) {
+  .sd-kpis-grid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+}
+/* Pastille de statut utilisée comme valeur principale d'une carte KPI : hérite la taille de
+   .stat-value (28px) au lieu de sa taille normale, pour que toutes les valeurs principales
+   partagent la même hauteur de texte, la carte CA servant de référence. */
+.stat-value .status-pill { font-size: inherit; font-weight: inherit; padding: 2px 14px; min-width: 0; }
+.sd-kpi-jours-restants { font-weight: 700; color: var(--orange); margin-top: 6px; }
+.sd-kpi-sparkline { margin-top: 10px; }

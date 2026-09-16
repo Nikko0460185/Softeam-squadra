@@ -216,8 +216,11 @@
       <!-- Position 1 : statut + résumé en tête, mis à jour en direct via updateBadges(). Le
            résumé (dates, TJM actuel, marge, dernière modification) ne s'affiche que pour une
            prestation déjà verrouillée (existe déjà, ou vient d'une opportunité) — à la création
-           directe, rien à résumer par définition, seul le statut s'affiche. -->
-      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+           directe, rien à résumer par définition, seul le statut s'affiche. Masqué dans "Suivre
+           la demande" (styles/organisms/modal.css, .suivi-demande-embedded #prest-summary-row) :
+           les cartes KPI Statut/TJM/CA y couvrent déjà exactement la même information — reste
+           utile tel quel dans la modale de création, seul endroit où il s'affiche encore. -->
+      <div id="prest-summary-row">
         <span class="status-pill" id="f-status-display"></span>
         <div id="mission-dates-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
         <div id="current-tjm-display" style="font-size:var(--text-sm);color:var(--text-muted)"></div>
@@ -227,13 +230,13 @@
       </div>
       <div class="modal-info-banner" id="prest-origin-banner" style="display:none;margin:0 0 16px">
         <span>Issue d'une opportunité</span>
-        <button type="button" class="btn-add-small" onclick="viewOriginOpportunite()">Voir l'opportunité d'origine</button>
       </div>
 
       <!-- Position 2 : modalités de la prestation — tout ce qui définit la mission elle-même
            (contrat, client, dates, contraintes, qui est staffé). Tarification et Mission
            (prolongation/sortie) sont des espaces à part, en positions 3 et 4. -->
-      <h3 class="section-title" style="margin-bottom:8px">Modalités de la prestation</h3>
+      <h3 class="section-title" style="margin-top:0">Modalités de la prestation</h3>
+      <div class="sd-fields-3col">
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="f-nature">Nature</label>
@@ -299,6 +302,7 @@
           <select class="form-select" id="f-cons" onchange="updateBadges()"></select>
         </div>
       </div>
+      </div>
 
       <!-- Position 3 : tarification. TJM initial / Taux d'activité (#tjm-fte-row) ne sont des
            champs de définition qu'à la création directe (obligatoires) — voir
@@ -306,7 +310,7 @@
            opportunité, ils sont masqués et remplacés par #tarif-history-block (table en lecture
            seule + bouton "Modifier la tarification") : les deux blocs sont mutuellement
            exclusifs, jamais affichés en même temps. -->
-      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</h3>
+      <h3 class="section-title">Tarification</h3>
 
       <div class="form-row" id="tjm-fte-row">
         <div class="form-group">
@@ -381,7 +385,7 @@
            avant que la prestation existe). Une "modification" = un type (prolongation / pause /
            sortie anticipée) + une date d'effet — plusieurs entrées possibles dans le temps,
            comme les révisions TJM (voir p.missionEvents, main.js). -->
-      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Modification de la mission</h3>
+      <h3 class="section-title">Modification de la mission</h3>
 
       <div id="mission-history-block" style="display:none">
         <div class="form-help" style="margin-bottom:10px">Prolongations, pauses et sorties anticipées appliquées depuis le début de la mission.</div>
@@ -430,7 +434,7 @@
       </div>
 
       <!-- Notes vraiment en dernier -->
-      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Notes</h3>
+      <h3 class="section-title">Notes</h3>
       <div class="form-group" style="margin-top:2px">
         <textarea class="form-textarea" id="f-notes" placeholder="Contacts, informations importantes…"></textarea>
       </div>
@@ -466,7 +470,7 @@
         <label class="form-label" for="cf-email">Email</label>
         <input type="email" class="form-input" id="cf-email" placeholder="jean.dupont@example.com" />
       </div>
-      <h3 class="section-title" style="margin-top:14px;margin-bottom:8px">Appartenance à l'entreprise</h3>
+      <h3 class="section-title">Appartenance à l'entreprise</h3>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="cf-date-entree">Date d'entrée <span class="req">(obligatoire)</span></label>
@@ -478,7 +482,7 @@
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px">Laisser vide si toujours en poste</div>
         </div>
       </div>
-      <h3 class="section-title" style="margin-top:14px;margin-bottom:8px">Coût complet</h3>
+      <h3 class="section-title">Coût complet</h3>
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="cf-cout-complet">Coût complet (€/j)</label>
@@ -528,7 +532,8 @@
            modale Prestation pour les champs communs (Nature, Titre du profil, Client, Service
            client, Dates, Limite d'UO) — seule différence assumée : "estimé" sur TJM/Taux
            d'activité, une opportunité n'a encore rien de confirmé. -->
-      <h3 class="section-title" style="margin-bottom:8px">Modalités de l'opportunité</h3>
+      <h3 class="section-title" style="margin-top:0">Modalités de l'opportunité</h3>
+      <div class="sd-fields-3col">
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="of-nature">Nature</label>
@@ -593,8 +598,10 @@
           </select>
         </div>
       </div>
+      </div>
 
-      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Tarification</h3>
+      <h3 class="section-title">Tarification</h3>
+      <div class="sd-fields-3col">
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="of-tjm">TJM estimé (€/j)</label>
@@ -612,8 +619,9 @@
           </select>
         </div>
       </div>
+      </div>
 
-      <h3 class="section-title" style="margin-top:18px;margin-bottom:8px">Candidatures</h3>
+      <h3 class="section-title">Candidatures</h3>
       <div id="opp-candidatures-list"></div>
       <button class="btn-add-small" style="margin-top:8px" onclick="addCandidatureInModal()">+ Ajouter un candidat</button>
     </div>
@@ -621,6 +629,36 @@
       <button class="btn-danger" id="btn-del-opp" onclick="deleteOpportunite()" style="display:none">Supprimer</button>
       <button class="btn-secondary" onclick="cancelOpportuniteModal()">Annuler</button>
       <button class="btn-primary" onclick="saveOpportunite()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- SUIVRE LA DEMANDE — overlay plein écran, fusionne l'édition Prestation + Opportunité
+     (jamais utilisé pour la création : voir openSuiviDemande() dans main.js). Les boîtes
+     #prest-modal-box / #opportunite-modal-box sont déplacées ici à l'ouverture, dans les
+     conteneurs ci-dessous, puis restituées à prest-overlay/opportunite-overlay à la fermeture. -->
+<div class="modal-overlay" id="suivi-demande-overlay" onclick="overlayClick(event,'suivi-demande-overlay')">
+  <div class="modal-box overlay-fullscreen" id="suivi-demande-box" role="dialog" aria-modal="true" aria-labelledby="suivi-demande-title">
+    <div class="modal-header">
+      <h2 id="suivi-demande-title">Suivre la demande</h2>
+    </div>
+    <div class="modal-body">
+      <h3 class="section-title" style="margin-top:0">Indicateurs</h3>
+      <div id="sd-kpis"></div>
+      <h3 class="section-title">Chronologie</h3>
+      <div id="sd-timeline"></div>
+      <div id="sd-prest-section">
+        <h3 class="section-title">Prestation</h3>
+        <div id="sd-prest-slot"></div>
+      </div>
+      <div id="sd-opp-section">
+        <h3 class="section-title">Opportunité</h3>
+        <div id="sd-opp-slot"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="cancelSuiviDemande()">Annuler</button>
+      <button class="btn-primary" onclick="saveSuiviDemande()">Enregistrer</button>
     </div>
   </div>
 </div>

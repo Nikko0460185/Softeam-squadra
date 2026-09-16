@@ -12,8 +12,7 @@
   border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px;
 }
 .chart-title {
-  font-size:var(--text-base); font-weight: 700; color: var(--text-dim);
-  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 14px;
+  font-size:var(--text-lg); font-weight: 600; margin-bottom: 14px;
 }
 
 /* Les 2 graphiques "CA & Pipeline" / "Marge & Rentabilité" : côte à côte dès que la largeur le
@@ -26,10 +25,14 @@
    reste alignée horizontalement même si un titre est un peu plus long que l'autre. */
 .ca-marge-chart-title { min-height: 40px; }
 
-/* Intitulés de section type "Activité · Q3 2026 · base 66 j/trimestre" — même famille visuelle que .chart-title */
+/* Intitulés de section type "Activité · Q3 2026 · base 66 j/trimestre" — même famille visuelle
+   que .chart-title. Même style que le titre de modale (.modal-header h2, voir skill
+   ui-coherence-squadra "Hiérarchie visuelle des titres") plutôt qu'un niveau visuel inférieur :
+   c'est l'espace fort avant chaque titre (margin-top), pas une différence de taille/couleur, qui
+   marque le début d'une nouvelle section. Override `margin-top:0` sur le 1er titre de chaque
+   conteneur (juste après le h2/l'en-tête, pas de section précédente à démarquer). */
 .section-title {
-  font-size:var(--text-base); font-weight: 700; color: var(--text-muted);
-  letter-spacing: .06em; text-transform: uppercase; margin: 0;
+  font-size:var(--text-lg); font-weight: 600; margin: 32px 0 8px;
 }
 
 .occ-table { width: 100%; border-collapse: collapse; font-size:var(--text-sm); }
