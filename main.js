@@ -18,6 +18,7 @@ let viewMode = 'consultants'; // 'consultants' | 'clients' — bascule de la Vue
 // Temp modal state
 let modalRevisions = []; // [{date, tjm}]
 let modalCostRevisions = []; // [{date, coutComplet}]
+let modalAbsences = []; // [{startDate, endDate, period?: 'matin'|'apres-midi'}] — pas de raison enregistrée
 let modalCandidatures = []; // [{id, consultantId, status, bookPushes:[{id,date}], soutenances:[{id,date,resultat}]}]
 let modalWonCandidatureId = null; // set par markCandidatureWonInModal(), consommé par savePrestation()
 let modalMissionEvents = []; // [{id, type: 'prolongation'|'pause'|'sortie_anticipee', date, resumeDate?}]
@@ -1447,6 +1448,36 @@ function renderStats() {
     });
   }
 
+  // Fraction (0 à 1) de jours ouvrés non travaillés par le consultant staffé sur cette prestation,
+  // sur l'intersection de la fenêtre de calcul [pStart,pEnd] et de la fenêtre réelle de la
+  // prestation. Une pause de mission et une absence individuelle qui tombent sur le même jour ne
+  // se cumulent jamais (Math.max, pas +) — cf. decisions/jours-travailles-ca/evidence.md.
+  function unavailableFraction(p, consultant, pStart, pEnd) {
+    const winStart = new Date(Math.max(pStart, new Date(p.startDate+'T00:00:00')));
+    const winEnd   = new Date(Math.min(pEnd, new Date(effectiveEnd(p)+'T00:00:00')));
+    if (winStart > winEnd) return 0;
+    let weekdays = 0, unavailable = 0;
+    const d = new Date(winStart);
+    while (d <= winEnd) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) {
+        weekdays++;
+        const dStr = d.toISOString().slice(0,10);
+        unavailable += Math.max(activePause(p, dStr) ? 1 : 0, absenceFraction(consultant, dStr));
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    return weekdays > 0 ? unavailable / weekdays : 0;
+  }
+  // 1 = journée complète, 0.5 = demi-journée (matin/après-midi), 0 = pas d'absence ce jour-là.
+  function absenceFraction(consultant, dateStr) {
+    if (!consultant?.absences?.length) return 0;
+    return consultant.absences.reduce((frac, a) => {
+      if (dateStr < a.startDate || dateStr > a.endDate) return frac;
+      return Math.max(frac, a.period ? 0.5 : 1);
+    }, 0);
+  }
+
   function periodData(pStart, pEnd, wDaysOverride) {
     const wDays      = wDaysOverride ?? (statsPeriod === 'quarterly' ? 55 : 218);
     const pEndStr    = pEnd.toISOString().slice(0,10);
@@ -1456,8 +1487,24 @@ function renderStats() {
     const totalFte   = missions.reduce((s,p) => s+(p.fte||5), 0);
     const maxFte     = consInPeriod.length * 5;
     const occRate    = maxFte > 0 ? Math.round(totalFte/maxFte*100) : 0;
-    const avgTjm     = missions.length ? Math.round(missions.reduce((s,p)=>s+currentTjm(p),0)/missions.length) : null;
-    const ca         = missions.reduce((s,p) => s+currentTjm(p)*wDays*(p.fte||5)/5, 0);
+    // TJM moyen : seulement les missions (régie) — un forfait n'a pas de TJM réel une fois son
+    // prix fixé une fois pour toute la prestation, un projet interne n'en a jamais eu de pertinent.
+    const tjmMissions = missions.filter(p => (p.nature||'mission') === 'mission');
+    const avgTjm     = tjmMissions.length ? Math.round(tjmMissions.reduce((s,p)=>s+currentTjm(p),0)/tjmMissions.length) : null;
+    // CA : sensible à la nature. Mission → réduit par les pauses/absences réelles sur la période.
+    // Forfait → prix fixé à l'avance, jamais réduit, proratisé sur la durée totale de
+    // l'engagement. Projet interne → 0, ce n'est pas une vente mais un investissement.
+    const ca = missions.reduce((s,p) => {
+      const nature = p.nature || 'mission';
+      if (nature === 'projet_interne') return s;
+      if (nature === 'forfait') {
+        const totalWD = workingDays(new Date(p.startDate+'T00:00:00'), new Date(effectiveEnd(p)+'T00:00:00'));
+        return totalWD > 0 ? s + (p.prixForfait||0) * (wDays/totalWD) : s;
+      }
+      const consultant = cons.find(c => c.id === p.consultantId);
+      const frac = unavailableFraction(p, consultant, pStart, pEnd);
+      return s + currentTjm(p) * wDays * (1-frac) * (p.fte||5)/5;
+    }, 0);
     const caPipeline = opps.reduce((s,o) => s+o.tjm*wDays*(o.fte||5)/5, 0);
     const masseSalariale = consInPeriod.reduce((s,c) => {
       const cc = currentCoutComplet(c, pEndStr);
@@ -2103,7 +2150,7 @@ function switchView(v) {
 // ─── PRESTATION MODAL ────────────────────────────────────────────────────────
 function openPrestModal(p, forceConsId) {
   modalWonCandidatureId = null;
-  clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-cons', 'f-nature']);
+  clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-prix-forfait', 'f-cons', 'f-nature']);
   const overlay = document.getElementById('prest-overlay');
   overlay.classList.add('open');
 
@@ -2128,6 +2175,7 @@ function openPrestModal(p, forceConsId) {
     document.getElementById('f-start').value    = p.startDate || '';
     document.getElementById('f-end').value      = p.endDate || '';
     document.getElementById('f-tjm').value      = p.tjm || '';
+    document.getElementById('f-prix-forfait').value = p.prixForfait || '';
     document.getElementById('f-fte').value      = p.fte || 5;
     document.getElementById('f-uo').value       = p.limiteUOAn || '';
     document.getElementById('f-notes').value    = p.notes || '';
@@ -2145,6 +2193,7 @@ function openPrestModal(p, forceConsId) {
     document.getElementById('f-start').value    = '';
     document.getElementById('f-end').value      = '';
     document.getElementById('f-tjm').value      = '';
+    document.getElementById('f-prix-forfait').value = '';
     document.getElementById('f-fte').value      = '5';
     document.getElementById('f-uo').value       = '';
     document.getElementById('f-notes').value    = '';
@@ -2185,24 +2234,43 @@ function openPrestModal(p, forceConsId) {
 // tout changement passe alors par les tables de tarification/modification ci-dessous. Les 2
 // paires de blocs sont mutuellement exclusives : champs de définition (création) d'un côté,
 // table en lecture seule + bouton "Modifier" de l'autre — jamais les deux en même temps.
+// Axe indépendant, ajouté ensuite : la nature choisie (mission/forfait/projet_interne) décide
+// QUEL champ de prix afficher (TJM vs prix forfaitaire vs aucun), et si l'historique de
+// révisions a un sens — seule une mission est révisable dans le temps ; un forfait a un prix
+// fixé une fois pour toute la prestation, un projet interne n'a pas de prix du tout.
 function updateLockedSections() {
-  const existing = !!document.getElementById('f-id').value;
-  const fromOpp  = !!document.getElementById('f-opportunite-id').value;
+  const nature    = document.getElementById('f-nature').value || 'mission';
+  const isForfait = nature === 'forfait';
+  const isInterne = nature === 'projet_interne';
+  const existing  = !!document.getElementById('f-id').value;
+  const fromOpp   = !!document.getElementById('f-opportunite-id').value;
+  // La mission (prolongation/pause/sortie anticipée) s'applique quelle que soit la nature —
+  // un forfait comme un projet interne peuvent aussi être prolongés ou arrêtés plus tôt.
+  const missionLocked = existing || fromOpp;
+  document.getElementById('mission-history-block').style.display = missionLocked ? '' : 'none';
+
+  document.getElementById('tjm-field-wrap').style.display          = (isForfait || isInterne) ? 'none' : '';
+  document.getElementById('prix-forfait-field-wrap').style.display = isForfait ? '' : 'none';
+
+  if (isForfait || isInterne) {
+    document.getElementById('tjm-fte-row').style.display         = '';
+    document.getElementById('tarif-history-block').style.display = 'none';
+    document.getElementById('f-tjm').disabled          = true;
+    document.getElementById('f-prix-forfait').disabled = isInterne;
+    return;
+  }
+
   // Cas particulier : une prestation issue d'une candidature gagnée n'a pas forcément hérité
   // d'un TJM (champ optionnel côté Opportunité). Verrouiller quand même le TJM/Taux d'activité
   // rendrait ce champ obligatoire invisible, donc impossible à corriger (bug constaté en test).
   // Le verrouillage tarification ne s'applique donc que s'il y a effectivement une valeur reprise.
   const hasBaseTjm  = !!document.getElementById('f-tjm').value;
   const tarifLocked = existing || (fromOpp && hasBaseTjm);
-  // La mission (prolongation/pause/sortie anticipée), elle, n'a pas ce problème : rien à
-  // reprendre de l'opportunité, donc rien à masquer faute de valeur.
-  const missionLocked = existing || fromOpp;
 
   document.getElementById('f-tjm').disabled = tarifLocked;
   document.getElementById('f-fte').disabled = tarifLocked;
   document.getElementById('tjm-fte-row').style.display          = tarifLocked ? 'none' : '';
   document.getElementById('tarif-history-block').style.display   = tarifLocked ? '' : 'none';
-  document.getElementById('mission-history-block').style.display = missionLocked ? '' : 'none';
 }
 
 // Capture l'état courant du formulaire Prestation (champs + révisions + modifications de
@@ -2520,18 +2588,22 @@ function commitPrestationFromForm() {
   const startDate    = document.getElementById('f-start').value;
   const endDate      = document.getElementById('f-end').value;
   const tjm          = parseFloat(document.getElementById('f-tjm').value) || 0;
+  const prixForfait  = parseFloat(document.getElementById('f-prix-forfait').value) || 0;
   const fte          = parseInt(document.getElementById('f-fte').value) || 5;
   const limiteUOAn   = parseInt(document.getElementById('f-uo').value) || undefined;
   const nature       = document.getElementById('f-nature').value;
   const titre        = document.getElementById('f-titre').value.trim();
   const notes        = document.getElementById('f-notes').value.trim();
 
-  clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-cons', 'f-nature']);
+  clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-prix-forfait', 'f-cons', 'f-nature']);
   const missing = [];
   if (!client) missing.push('f-client');
   if (!startDate) missing.push('f-start');
   if (!endDate) missing.push('f-end');
-  if (!tjm) missing.push('f-tjm');
+  // Le prix dépend de la nature : TJM pour une mission, prix forfaitaire pour un forfait,
+  // aucun des deux pour un projet interne (pas de prix).
+  if (nature === 'mission' && !tjm) missing.push('f-tjm');
+  if (nature === 'forfait' && !prixForfait) missing.push('f-prix-forfait');
   if (!consultantId) missing.push('f-cons');
   // Optionnelle à l'étape Opportunité (pas toujours connue dès la détection), mais devient
   // obligatoire ici si elle n'a pas déjà été reprise de l'opportunité d'origine.
@@ -2551,6 +2623,7 @@ function commitPrestationFromForm() {
     consultantId, client, clientService, startDate, endDate,
     missionEvents: modalMissionEvents,
     tjm, fte, limiteUOAn, nature, titre, tjmRevisions: modalRevisions,
+    prixForfait: nature === 'forfait' ? prixForfait : undefined,
     notes, opportuniteId,
   };
 
@@ -2647,6 +2720,7 @@ function openConsModal(id) {
     document.getElementById('cf-date-sortie').value = c.dateSortie||'';
     document.getElementById('cf-cout-complet').value = c.coutComplet || '';
     modalCostRevisions = c.coutCompletRevisions ? [...c.coutCompletRevisions] : [];
+    modalAbsences = c.absences ? c.absences.map(a => ({...a})) : [];
   } else {
     document.getElementById('cons-modal-title').textContent = 'Nouveau consultant';
     document.getElementById('btn-del-cons').style.display = 'none';
@@ -2655,10 +2729,68 @@ function openConsModal(id) {
     document.getElementById('cf-date-entree').value = document.getElementById('cf-date-sortie').value = '';
     document.getElementById('cf-cout-complet').value = '';
     modalCostRevisions = [];
+    modalAbsences = [];
   }
+  document.getElementById('abs-period').value = '';
+  document.getElementById('abs-start').value  = '';
+  document.getElementById('abs-end').value    = '';
+  updateAbsPeriodUI();
   renderCostRevisions();
+  renderAbsences();
   updateTcDisplay();
   openModalA11y('cons-overlay');
+}
+
+// Une demi-journée n'a de sens que pour une seule date : le champ "Au" est masqué dans ce cas
+// (la date de fin est forcée égale à la date de début dans addAbsence()).
+function updateAbsPeriodUI() {
+  document.getElementById('abs-end-wrap').style.display =
+    document.getElementById('abs-period').value ? 'none' : '';
+}
+
+function addAbsence() {
+  const period = document.getElementById('abs-period').value; // '' | 'matin' | 'apres-midi'
+  const start  = document.getElementById('abs-start').value;
+  const endRaw = document.getElementById('abs-end').value;
+  if (!start) { showToast('Saisissez une date', 'error'); return; }
+  const end = period ? start : (endRaw || start);
+  if (end < start) { showToast('La date de fin doit être après la date de début', 'error'); return; }
+  modalAbsences = modalAbsences.filter(a =>
+    !(a.startDate === start && a.endDate === end && (a.period||'') === period));
+  modalAbsences.push({ startDate: start, endDate: end, ...(period ? { period } : {}) });
+  modalAbsences.sort((a,b) => a.startDate.localeCompare(b.startDate));
+  document.getElementById('abs-period').value = '';
+  document.getElementById('abs-start').value  = '';
+  document.getElementById('abs-end').value    = '';
+  updateAbsPeriodUI();
+  renderAbsences();
+}
+
+function removeAbsence(startDate, endDate, period) {
+  if (!confirm('Supprimer cette absence ?')) return;
+  modalAbsences = modalAbsences.filter(a =>
+    !(a.startDate === startDate && a.endDate === endDate && (a.period||'') === period));
+  renderAbsences();
+}
+
+const ABSENCE_PERIOD_LABELS = { matin: 'Matin', 'apres-midi': 'Après-midi' };
+function renderAbsences() {
+  const el = document.getElementById('absence-list');
+  el.innerHTML = '';
+  if (!modalAbsences.length) {
+    el.innerHTML = `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:6px 0 10px">Aucune absence saisie.</div>`;
+    return;
+  }
+  modalAbsences.forEach(a => {
+    const label = a.period
+      ? `${fmtD(a.startDate)} · ${ABSENCE_PERIOD_LABELS[a.period]}`
+      : (a.startDate === a.endDate ? fmtD(a.startDate) : `${fmtD(a.startDate)} → ${fmtD(a.endDate)}`);
+    el.innerHTML += `
+      <div class="revision-item">
+        <span class="revision-date">${label}</span>
+        <button class="btn-icon" onclick="removeAbsence('${a.startDate}','${a.endDate}','${a.period||''}')" title="Supprimer" aria-label="Supprimer cette absence" style="width:22px;height:22px;font-size:var(--text-sm)">×</button>
+      </div>`;
+  });
 }
 
 function saveConsultant() {
@@ -2682,9 +2814,9 @@ function saveConsultant() {
   if (dateSortie && dateSortie < dateEntree) { markFieldInvalid('cf-date-sortie'); showToast('La date de sortie doit être après la date d\'entrée', 'error'); document.getElementById('cf-date-sortie').focus(); return; }
   if (id) {
     const i = S.consultants.findIndex(c=>c.id===id);
-    if (i>=0) S.consultants[i] = {...S.consultants[i], name, role, email, dateEntree, dateSortie: dateSortie || undefined, coutComplet: coutComplet || undefined, coutCompletRevisions: modalCostRevisions.length ? modalCostRevisions : undefined};
+    if (i>=0) S.consultants[i] = {...S.consultants[i], name, role, email, dateEntree, dateSortie: dateSortie || undefined, coutComplet: coutComplet || undefined, coutCompletRevisions: modalCostRevisions.length ? modalCostRevisions : undefined, absences: modalAbsences.length ? modalAbsences : undefined};
   } else {
-    S.consultants.push({ id: genId(), name, role, email, dateEntree, ...(dateSortie ? {dateSortie} : {}), ...(coutComplet ? {coutComplet} : {}), ...(modalCostRevisions.length ? {coutCompletRevisions: modalCostRevisions} : {}) });
+    S.consultants.push({ id: genId(), name, role, email, dateEntree, ...(dateSortie ? {dateSortie} : {}), ...(coutComplet ? {coutComplet} : {}), ...(modalCostRevisions.length ? {coutCompletRevisions: modalCostRevisions} : {}), ...(modalAbsences.length ? {absences: modalAbsences} : {}) });
   }
   save(); closeModal('cons-overlay'); render();
   showToast('Consultant enregistré', 'success');

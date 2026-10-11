@@ -242,7 +242,7 @@
           <label class="form-label" for="f-nature">Nature</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Type de contrat avec le client.</div>
           <div class="form-error" id="err-f-nature"></div>
-          <select class="form-select" id="f-nature">
+          <select class="form-select" id="f-nature" onchange="updateLockedSections()">
             <option value="">— Choisir —</option>
             <option value="mission">Mission (régie)</option>
             <option value="forfait">Forfait</option>
@@ -313,11 +313,17 @@
       <h3 class="section-title">Tarification</h3>
 
       <div class="form-row" id="tjm-fte-row">
-        <div class="form-group">
+        <div class="form-group" id="tjm-field-wrap">
           <label class="form-label" for="f-tjm">TJM initial (€/j)</label>
           <div class="form-help" id="help-f-tjm"><span class="req">(obligatoire)</span> Taux journalier moyen facturé au client.</div>
           <div class="form-error" id="err-f-tjm"></div>
           <input type="number" class="form-input" id="f-tjm" placeholder="Montant en €/jour" min="0" oninput="updateBadges()" />
+        </div>
+        <div class="form-group" id="prix-forfait-field-wrap" style="display:none">
+          <label class="form-label" for="f-prix-forfait">Prix forfaitaire total (€)</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Prix convenu à l'avance pour l'ensemble de la prestation — fixe, quelle que soit l'activité réelle (absences incluses).</div>
+          <div class="form-error" id="err-f-prix-forfait"></div>
+          <input type="number" class="form-input" id="f-prix-forfait" placeholder="Montant total en €" min="0" oninput="updateBadges()" />
         </div>
         <div class="form-group">
           <label class="form-label" for="f-fte">Taux d'activité</label>
@@ -506,6 +512,29 @@
           <input type="number" class="form-input" id="cost-rev-value" placeholder="450" min="0" />
         </div>
         <button class="btn-add-small" onclick="addCostRevision()">+ Ajouter</button>
+      </div>
+
+      <h3 class="section-title">Absences</h3>
+      <div class="form-help" style="margin-bottom:8px">Journée(s) ou demi-journée non travaillée(s) — saisie manuelle, la raison (congé, maladie…) n'est pas enregistrée ici.</div>
+      <div class="revision-list" id="absence-list"></div>
+      <div class="add-revision-row">
+        <div style="flex:1">
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Durée</div>
+          <select class="form-select" id="abs-period" onchange="updateAbsPeriodUI()">
+            <option value="">Journée(s) complète(s)</option>
+            <option value="matin">Demi-journée — matin</option>
+            <option value="apres-midi">Demi-journée — après-midi</option>
+          </select>
+        </div>
+        <div style="flex:1">
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Du</div>
+          <input type="date" class="form-input" id="abs-start" />
+        </div>
+        <div style="flex:1" id="abs-end-wrap">
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Au</div>
+          <input type="date" class="form-input" id="abs-end" />
+        </div>
+        <button class="btn-add-small" onclick="addAbsence()">+ Ajouter</button>
       </div>
     </div>
     <div class="modal-footer">
