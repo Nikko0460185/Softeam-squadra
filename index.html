@@ -58,16 +58,16 @@
   </div>
   <div class="consultant-list" id="cons-list"></div>
 
+  <button id="btn-add-consultant" class="btn-primary" style="width:calc(100% - 24px);margin:8px 12px;justify-content:center" onclick="openConsModal()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Ajouter un consultant
+  </button>
+
   <!-- Rempli par JS (relocateTopbarActions) uniquement en fenêtre étroite : reçoit les 2
        boutons "Ajouter..." déplacés depuis la topbar, regroupés ici avec "Ajouter un
        consultant" pour que toutes les actions de création soient au même endroit, en fin
        de tiroir. Vide et donc invisible en desktop. -->
   <div class="sidebar-section" id="sidebar-actions"></div>
-
-  <button id="btn-add-consultant" class="btn-primary" style="width:calc(100% - 24px);margin:8px 12px;justify-content:center" onclick="openConsModal()">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    Ajouter un consultant
-  </button>
 </div>
 
 <!-- Fond assombri derrière la sidebar quand elle s'ouvre en tiroir (fenêtre étroite) -->
@@ -97,6 +97,10 @@
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
       </summary>
       <div class="user-menu-panel">
+        <!-- Manager uniquement (voir render()) : aide à la présentation de l'outil pour définir
+             rapidement les commerciaux (portefeuille client), pas une fonction finale de
+             l'interface — rangée dans ce menu plutôt que dans la sidebar pour ne pas l'alourdir. -->
+        <button class="btn-secondary" id="btn-manage-commerciaux" onclick="openCommerciauxManageModal()">Gérer les commerciaux</button>
         <div id="text-scale-control" role="group" aria-label="Taille du texte">
           <button class="btn-icon" id="btn-text-scale-down" onclick="decreaseTextScale()" aria-label="Réduire la taille du texte" title="Réduire la taille du texte">A-</button>
           <span id="text-scale-indicator" aria-live="polite"></span>
@@ -237,22 +241,28 @@
            (prolongation/sortie) sont des espaces à part, en positions 3 et 4. -->
       <h3 class="section-title" style="margin-top:0">Modalités de la prestation</h3>
       <div class="sd-fields-3col">
+      <!-- nature/limite d'UO/commercial attaché sont des réglages de l'ENTITÉ (client+service
+           client), partagés par tous les consultants qui y sont staffés — plus modifiables ici
+           depuis la refonte "Suivre la demande" du 2026-10-12 (voir decisions/
+           vue-prestation-macro-micro/), uniquement via le bouton "Réglages de la prestation" de
+           cette vue. Ces 3 champs restent en entrée cachée : leur valeur continue d'être peuplée
+           à l'ouverture et lue par updateLockedSections()/commitPrestationFromForm() sans aucun
+           changement à ces fonctions. -->
+      <input type="hidden" id="f-nature" />
+      <input type="hidden" id="f-uo" />
+      <input type="hidden" id="f-commercial" />
+
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="f-nature">Nature</label>
-          <div class="form-help"><span class="req">(obligatoire)</span> Type de contrat avec le client.</div>
-          <div class="form-error" id="err-f-nature"></div>
-          <select class="form-select" id="f-nature" onchange="updateLockedSections()">
-            <option value="">— Choisir —</option>
-            <option value="mission">Mission (régie)</option>
-            <option value="forfait">Forfait</option>
-            <option value="projet_interne">Projet interne</option>
-          </select>
-        </div>
         <div class="form-group">
           <label class="form-label" for="f-titre">Titre du profil</label>
           <div class="form-help">Intitulé du poste occupé sur cette mission.</div>
           <input type="text" class="form-input" id="f-titre" placeholder="Intitulé du poste" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="f-cons">Consultant</label>
+          <div class="form-help"><span class="req">(obligatoire)</span> Consultant affecté à cette prestation.</div>
+          <div class="form-error" id="err-f-cons"></div>
+          <select class="form-select" id="f-cons" onchange="prefillTjmFromConsultant();updateBadges()"></select>
         </div>
       </div>
 
@@ -261,13 +271,13 @@
           <label class="form-label" for="f-client">Client</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
           <div class="form-error" id="err-f-client"></div>
-          <input type="text" class="form-input" id="f-client" placeholder="Nom du client" />
+          <input type="text" class="form-input" id="f-client" placeholder="Nom du client" oninput="inheritEntitySettingsFromClient()" />
         </div>
         <div class="form-group">
           <label class="form-label" for="f-service">Service client</label>
           <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
           <div class="form-error" id="err-f-service"></div>
-          <input type="text" class="form-input" id="f-service" placeholder="Service ou pôle" />
+          <input type="text" class="form-input" id="f-service" placeholder="Service ou pôle" oninput="inheritEntitySettingsFromClient()" />
         </div>
       </div>
 
@@ -287,24 +297,9 @@
           <input type="date" class="form-input" id="f-end" oninput="updateBadges()" />
         </div>
       </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="f-uo">Limite d'UO / an (j)</label>
-          <div class="form-help">Plafond annuel de jours facturables.</div>
-          <div class="form-error" id="err-f-uo"></div>
-          <input type="number" class="form-input" id="f-uo" placeholder="Nombre de jours par an" min="0" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="f-cons">Consultant</label>
-          <div class="form-help"><span class="req">(obligatoire)</span> Consultant affecté à cette prestation.</div>
-          <div class="form-error" id="err-f-cons"></div>
-          <select class="form-select" id="f-cons" onchange="updateBadges()"></select>
-        </div>
-      </div>
       </div>
 
-      <!-- Position 3 : tarification. TJM initial / Taux d'activité (#tjm-fte-row) ne sont des
+      <!-- Position 3 : tarification. TJM initial / Taux d'occupation (#tjm-fte-row) ne sont des
            champs de définition qu'à la création directe (obligatoires) — voir
            updateTjmFieldsLock() dans main.js. Dès que la prestation existe déjà ou vient d'une
            opportunité, ils sont masqués et remplacés par #tarif-history-block (table en lecture
@@ -326,7 +321,7 @@
           <input type="number" class="form-input" id="f-prix-forfait" placeholder="Montant total en €" min="0" oninput="updateBadges()" />
         </div>
         <div class="form-group">
-          <label class="form-label" for="f-fte">Taux d'activité</label>
+          <label class="form-label" for="f-fte">Taux d'occupation</label>
           <div class="form-help" id="help-f-fte">Part du temps consacrée à cette mission (5/5 = temps plein).</div>
           <div class="form-error" id="err-f-fte"></div>
           <select class="form-select" id="f-fte" onchange="updateBadges()">
@@ -338,13 +333,13 @@
       </div>
 
       <div id="tarif-history-block" style="display:none">
-        <div class="form-help" style="margin-bottom:10px">TJM et taux d'activité appliqués depuis le début de la mission.</div>
+        <div class="form-help" style="margin-bottom:10px">TJM et taux d'occupation appliqués depuis le début de la mission.</div>
         <div style="overflow-x:auto">
           <table class="tarif-table" id="tarif-table">
             <thead>
               <tr>
                 <th scope="col">TJM</th>
-                <th scope="col">Taux d'activité</th>
+                <th scope="col">Occupation</th>
                 <th scope="col">Date de mise en place</th>
                 <th scope="col">Marge hebdo</th>
                 <th scope="col">Tendance</th>
@@ -363,11 +358,11 @@
           <div class="add-revision-row" style="margin-top:4px">
             <div style="flex:1">
               <label class="form-label" for="rev-tjm">TJM (€/j)</label>
-              <div class="form-help">Laisser vide si seul le taux d'activité change.</div>
+              <div class="form-help">Laisser vide si seul le taux d'occupation change.</div>
               <input type="number" class="form-input" id="rev-tjm" placeholder="Montant en €/jour" min="0" />
             </div>
             <div style="flex:1">
-              <label class="form-label" for="rev-fte">Taux d'activité</label>
+              <label class="form-label" for="rev-fte">Taux d'occupation</label>
               <div class="form-help">Laisser sur "Inchangé" si seul le TJM change.</div>
               <select class="form-select" id="rev-fte">
                 <option value="">Inchangé</option>
@@ -388,13 +383,18 @@
 
       <!-- Position 4 : modification de la mission — même structure que Tarification (position 3) :
            historique en lecture seule + bouton, masqué à la création directe (rien à modifier
-           avant que la prestation existe). Une "modification" = un type (prolongation / pause /
-           sortie anticipée) + une date d'effet — plusieurs entrées possibles dans le temps,
-           comme les révisions TJM (voir p.missionEvents, main.js). -->
+           avant que la prestation existe). Une "modification" = un type (prolongation / sortie
+           anticipée) + une date d'effet — plusieurs entrées possibles dans le temps, comme les
+           révisions TJM (voir p.missionEvents, main.js). Les pauses sont un réglage de l'ENTITÉ
+           (client+service, partagé par tous les consultants staffés) depuis le 2026-10-12 — elles
+           restent affichées dans l'historique ci-dessous pour le contexte (explique un statut "en
+           pause"), mais ne sont plus ajoutables/supprimables ici : voir "Réglages de la
+           prestation" dans "Suivre la demande" (renderMissionEvents() masque leur bouton
+           supprimer). -->
       <h3 class="section-title">Modification de la mission</h3>
 
       <div id="mission-history-block" style="display:none">
-        <div class="form-help" style="margin-bottom:10px">Prolongations, pauses et sorties anticipées appliquées depuis le début de la mission.</div>
+        <div class="form-help" style="margin-bottom:10px">Prolongations et sorties anticipées appliquées depuis le début de la mission (les pauses se gèrent dans "Réglages de la prestation").</div>
         <div style="overflow-x:auto">
           <table class="tarif-table" id="mission-table">
             <thead>
@@ -420,7 +420,6 @@
               <div class="form-help">Nature de la modification.</div>
               <select class="form-select" id="ev-type" onchange="updateEvTypeUI()">
                 <option value="prolongation">Prolongation</option>
-                <option value="pause">Pause</option>
                 <option value="sortie_anticipee">Sortie anticipée</option>
               </select>
             </div>
@@ -545,6 +544,129 @@
   </div>
 </div>
 
+<!-- RÉGLAGES DE LA PRESTATION — entité (client + service client), réglages partagés par tous
+     les consultants staffés dessus : nature, limite d'UO, commercial attaché, pauses. Ouverte
+     depuis "Suivre la demande" (openPrestationReglagesModal()) ; propage les valeurs à TOUTES
+     les prestations de l'entité au clic Enregistrer (savePrestationReglages()) — voir
+     decisions/vue-prestation-macro-micro/. Jamais de champ statut ici (reste calculé
+     automatiquement, jamais saisi à la main). -->
+<div class="modal-overlay" id="prestation-reglages-overlay" onclick="overlayClick(event,'prestation-reglages-overlay')">
+  <div class="modal-box" id="prestation-reglages-modal-box" role="dialog" aria-modal="true" aria-labelledby="pr-title">
+    <div class="modal-header">
+      <h2 id="pr-title">Réglages de la prestation</h2>
+      <button class="btn-icon" onclick="cancelPrestationReglagesModal()" aria-label="Fermer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <!-- Valeurs d'origine, pour retrouver les prestations de l'entité à l'enregistrement même
+           si le client/service est renommé ici (voir savePrestationReglages() dans main.js). -->
+      <input type="hidden" id="pr-original-client" />
+      <input type="hidden" id="pr-original-client-service" />
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="pr-client">Client <span class="req">(obligatoire)</span></label>
+          <div class="form-help">Renommer s'applique à tous les consultants staffés sur cette entité.</div>
+          <div class="form-error" id="err-pr-client"></div>
+          <input type="text" class="form-input" id="pr-client" placeholder="Nom du client" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pr-client-service">Service client</label>
+          <input type="text" class="form-input" id="pr-client-service" placeholder="Service ou pôle" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="pr-nature">Nature <span class="req">(obligatoire)</span></label>
+          <select class="form-select" id="pr-nature">
+            <option value="mission">Mission (régie)</option>
+            <option value="forfait">Forfait</option>
+            <option value="projet_interne">Projet interne</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pr-uo">Limite d'UO / an (j)</label>
+          <input type="number" class="form-input" id="pr-uo" placeholder="Nombre de jours par an" min="0" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="pr-commercial">Commercial attaché</label>
+        <div class="form-help">Pré-rempli selon le portefeuille client — reste modifiable à la main.</div>
+        <select class="form-select" id="pr-commercial"></select>
+      </div>
+
+      <div class="form-label" style="margin-top:12px;margin-bottom:8px">Pauses <span class="opt" style="font-weight:400">(décision côté client — s'applique à tous les consultants staffés sur cette prestation)</span></div>
+      <div class="revision-list" id="pr-pause-list"></div>
+      <div class="add-revision-row">
+        <div style="flex:1">
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Date d'effet</div>
+          <input type="date" class="form-input" id="pr-pause-date" />
+        </div>
+        <div style="flex:1">
+          <div class="form-label" style="font-size:var(--text-xs);margin-bottom:4px">Date de reprise</div>
+          <input type="date" class="form-input" id="pr-pause-resume" />
+        </div>
+        <button class="btn-add-small" onclick="addPrestationReglagesPause()">+ Ajouter</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="cancelPrestationReglagesModal()">Annuler</button>
+      <button class="btn-primary" onclick="savePrestationReglages()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- COMMERCIAUX — POPUP DE GESTION (liste), ouvert depuis le menu "Connecté" (Manager
+     uniquement). Aide à la présentation de l'outil, pas une fonction finale de l'interface —
+     voir render(). L'ajout/modification d'un commercial se fait via COMMERCIAL MODAL ci-dessous,
+     ouverte par-dessus celle-ci. -->
+<div class="modal-overlay" id="commerciaux-manage-overlay" onclick="overlayClick(event,'commerciaux-manage-overlay')">
+  <div class="modal-box" id="commerciaux-manage-modal-box" role="dialog" aria-modal="true" aria-labelledby="commerciaux-manage-modal-title">
+    <div class="modal-header">
+      <h2 id="commerciaux-manage-modal-title">Commerciaux</h2>
+      <button class="btn-icon" onclick="closeModal('commerciaux-manage-overlay')" aria-label="Fermer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-help" style="margin-bottom:10px">Portefeuille client de chaque commercial — utilisé par le profil Commercial du panneau de lancement et pour pré-remplir le "commercial attaché" sur une opportunité/prestation.</div>
+      <div class="consultant-list" id="commerciaux-manage-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="editCommercialFromManageList('')">+ Ajouter un commercial</button>
+    </div>
+  </div>
+</div>
+
+<!-- COMMERCIAL MODAL -->
+<div class="modal-overlay" id="commercial-overlay" onclick="overlayClick(event,'commercial-overlay')">
+  <div class="modal-box" id="commercial-modal-box" role="dialog" aria-modal="true" aria-labelledby="commercial-modal-title">
+    <div class="modal-header">
+      <h2 id="commercial-modal-title">Nouveau commercial</h2>
+      <button class="btn-icon" onclick="cancelCommercialModal()" aria-label="Fermer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="co-id" />
+      <div class="form-group">
+        <label class="form-label" for="co-name">Prénom & Nom <span class="req">(obligatoire)</span></label>
+        <input type="text" class="form-input" id="co-name" placeholder="Karim Blin" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="co-clients">Portefeuille client</label>
+        <input type="text" class="form-input" id="co-clients" placeholder="Orange, Airbus" />
+        <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:4px">Noms de client séparés par une virgule, tels que saisis dans les opportunités/prestations — sert à proposer automatiquement ce commercial comme "commercial attaché".</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-danger" id="btn-del-commercial" onclick="deleteCommercial()" style="display:none">Supprimer</button>
+      <button class="btn-secondary" onclick="cancelCommercialModal()">Annuler</button>
+      <button class="btn-primary" onclick="saveCommercial()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- OPPORTUNITÉ MODAL — fenêtre unique : besoin, candidatures (pushs/soutenances), gain/perte -->
 <div class="modal-overlay" id="opportunite-overlay" onclick="overlayClick(event,'opportunite-overlay')">
   <div class="modal-box" id="opportunite-modal-box" role="dialog" aria-modal="true" aria-labelledby="opportunite-modal-title">
@@ -560,7 +682,7 @@
            (Tarification / Modalités séparées). Même ordre de champs et mêmes libellés que la
            modale Prestation pour les champs communs (Nature, Titre du profil, Client, Service
            client, Dates, Limite d'UO) — seule différence assumée : "estimé" sur TJM/Taux
-           d'activité, une opportunité n'a encore rien de confirmé. -->
+           d'occupation, une opportunité n'a encore rien de confirmé. -->
       <h3 class="section-title" style="margin-top:0">Modalités de l'opportunité</h3>
       <div class="sd-fields-3col">
       <div class="form-row">
@@ -586,12 +708,20 @@
           <label class="form-label" for="of-client">Client</label>
           <div class="form-help"><span class="req">(obligatoire)</span> Nom de l'entreprise cliente.</div>
           <div class="form-error" id="err-of-client"></div>
-          <input type="text" class="form-input" id="of-client" placeholder="Nom du client" />
+          <input type="text" class="form-input" id="of-client" placeholder="Nom du client" oninput="autoSuggestCommercial('of-client','of-commercial')" />
         </div>
         <div class="form-group">
           <label class="form-label" for="of-service">Service client</label>
           <div class="form-help">Département ou pôle chez le client, si utile à préciser.</div>
           <input type="text" class="form-input" id="of-service" placeholder="Service ou pôle" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="of-commercial">Commercial attaché</label>
+          <div class="form-help">Pré-rempli automatiquement si le client correspond au portefeuille d'un commercial — modifiable à la main.</div>
+          <select class="form-select" id="of-commercial"></select>
         </div>
       </div>
 
@@ -638,7 +768,7 @@
           <input type="number" class="form-input" id="of-tjm" placeholder="Montant en €/jour" min="0" />
         </div>
         <div class="form-group">
-          <label class="form-label" for="of-fte">Taux d'activité estimé</label>
+          <label class="form-label" for="of-fte">Taux d'occupation estimé</label>
           <div class="form-help">Part du temps envisagée, pas encore confirmée (5/5 = temps plein).</div>
           <select class="form-select" id="of-fte">
             <option value="">— Pas encore connu —</option>
@@ -662,32 +792,54 @@
   </div>
 </div>
 
-<!-- SUIVRE LA DEMANDE — overlay plein écran, fusionne l'édition Prestation + Opportunité
-     (jamais utilisé pour la création : voir openSuiviDemande() dans main.js). Les boîtes
-     #prest-modal-box / #opportunite-modal-box sont déplacées ici à l'ouverture, dans les
-     conteneurs ci-dessous, puis restituées à prest-overlay/opportunite-overlay à la fermeture. -->
+<!-- SUIVRE LA DEMANDE — overlay plein écran, 2 modes décidés par openSuiviDemande() (main.js) :
+     - GROUPÉ (une prestation existe pour l'entité client+clientService) : refonte macro+micro du
+       2026-10-12 (voir decisions/vue-prestation-macro-micro/), toujours en lecture seule — jamais
+       de formulaire embarqué, "Modifier"/"Réglages de la prestation" ouvrent une modale standalone
+       et reviennent ici en sortie.
+     - LEGACY (opportunité pas encore gagnée, aucune prestation) : comportement d'origine inchangé,
+       #opportunite-modal-box déplacée ici à l'ouverture (sd-opp-slot), restituée à
+       opportunite-overlay à la fermeture. -->
 <div class="modal-overlay" id="suivi-demande-overlay" onclick="overlayClick(event,'suivi-demande-overlay')">
   <div class="modal-box overlay-fullscreen" id="suivi-demande-box" role="dialog" aria-modal="true" aria-labelledby="suivi-demande-title">
     <div class="modal-header">
       <h2 id="suivi-demande-title">Suivre la demande</h2>
     </div>
     <div class="modal-body">
+      <!-- Les blocs suivants (jusqu'à "Chronologie") ne sont visibles qu'en mode groupé. -->
+      <div id="sd-entity-header" style="display:none;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+        <span id="sd-entity-name" style="font-size:var(--text-xl);font-weight:700"></span>
+        <span id="sd-entity-commercial" style="font-size:var(--text-base);color:var(--text-dim)"></span>
+      </div>
       <h3 class="section-title" style="margin-top:0">Indicateurs</h3>
       <div id="sd-kpis"></div>
+      <div id="sd-charts" style="display:none;margin-top:16px"></div>
+      <div id="sd-entity-actions" style="display:none;justify-content:flex-end;margin:16px 0">
+        <button class="btn-primary" id="sd-btn-reglages" onclick="openReglagesFromSuiviDemande()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Réglages de la prestation
+        </button>
+      </div>
+      <div id="sd-staffing-section" style="display:none">
+        <h3 class="section-title">Consultants staffés</h3>
+        <div class="list-card-body" id="sd-staffing-list"></div>
+      </div>
       <h3 class="section-title">Chronologie</h3>
       <div id="sd-timeline"></div>
-      <div id="sd-prest-section">
-        <h3 class="section-title">Prestation</h3>
-        <div id="sd-prest-slot"></div>
-      </div>
+      <!-- Mode groupé uniquement : 1 bouton par opportunité distincte à l'origine de l'entité
+           (voir renderSuiviDemandeGroupOppLinks() dans main.js) — ouvre la gestion des
+           candidatures (pushs/soutenances), pas par consultant. Même style et même alignement à
+           droite que "Réglages de la prestation" (#sd-entity-actions, juste au-dessus). -->
+      <div id="sd-opp-links" style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:12px 0"></div>
       <div id="sd-opp-section">
         <h3 class="section-title">Opportunité</h3>
         <div id="sd-opp-slot"></div>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn-secondary" onclick="cancelSuiviDemande()">Annuler</button>
-      <button class="btn-primary" onclick="saveSuiviDemande()">Enregistrer</button>
+      <button class="btn-secondary" id="sd-btn-cancel" onclick="cancelSuiviDemande()">Annuler</button>
+      <button class="btn-primary" id="sd-btn-save" onclick="saveSuiviDemande()">Enregistrer</button>
+      <button class="btn-secondary" id="sd-btn-close" onclick="closeSuiviDemande()" style="display:none">Fermer</button>
     </div>
   </div>
 </div>

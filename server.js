@@ -13,6 +13,7 @@ const FILES = {
   prestations: path.join(DATA_DIR, 'prestations.json'),
   opportunites: path.join(DATA_DIR, 'opportunites.json'),
   candidatures: path.join(DATA_DIR, 'candidatures.json'),
+  commerciaux: path.join(DATA_DIR, 'commerciaux.json'),
 };
 
 const MIME = {
@@ -53,6 +54,7 @@ function handleGetData(req, res) {
     prestations: readJson(FILES.prestations) || [],
     opportunites: readJson(FILES.opportunites) || [],
     candidatures: readJson(FILES.candidatures) || [],
+    commerciaux: readJson(FILES.commerciaux) || [],
   });
 }
 
@@ -67,6 +69,7 @@ function handlePostData(req, res) {
     fs.writeFileSync(FILES.prestations, JSON.stringify(data.prestations || [], null, 2));
     fs.writeFileSync(FILES.opportunites, JSON.stringify(data.opportunites || [], null, 2));
     fs.writeFileSync(FILES.candidatures, JSON.stringify(data.candidatures || [], null, 2));
+    fs.writeFileSync(FILES.commerciaux, JSON.stringify(data.commerciaux || [], null, 2));
     sendJson(res, 200, { ok: true });
   });
 }

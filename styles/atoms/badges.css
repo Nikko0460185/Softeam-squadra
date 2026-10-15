@@ -24,16 +24,10 @@
 
 .status-pills { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 
-/* Style "contour" (fond transparent + bordure) volontairement différent des .status-pill
-   (fond plein) : Type et Statut sont 2 axes d'info différents, parfois avec la même teinte
-   (ex. Mission/Opportunité en bleu) — le contour évite de les confondre au premier coup d'œil. */
-.nature-badge {
-  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
-  padding: 2px 8px; border-radius: 20px; font-size:var(--text-2xs); font-weight: 700;
-  letter-spacing: .03em; flex-shrink: 0; justify-self: start;
-  min-width: 124px; /* calé sur "Projet interne", le libellé le plus long, quitte à laisser de l'air sur "Mission"/"Forfait" */
-  background: transparent; border: 1px solid currentColor;
-}
+/* Couleur du "Type" (nature de prestation) — texte simple, pas de pastille pilule : un retour
+   utilisateur (2026-10-15) a signalé que la pilule ne s'intégrait pas bien dans les nouvelles
+   interfaces. Partout où le type est affiché (Vue liste, Consultants staffés, Statistiques,
+   carte KPI "Nature & statut"), seule la couleur distingue Mission/Forfait/Projet interne. */
 .nature-mission        { color: var(--accent); }
 .nature-forfait        { color: var(--purple); }
 .nature-projet_interne { color: var(--yellow); }

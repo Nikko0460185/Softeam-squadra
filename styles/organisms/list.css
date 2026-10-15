@@ -11,22 +11,23 @@
 }
 /* Scroll horizontal de secours : entre 900px (bascule vers les cartes empilées) et ~1150px,
    la sidebar fixe (260px) ne laisse plus assez de place pour que les 9 colonnes tiennent même
-   à leur largeur minimale (somme des minmax ci-dessous ≈ 844px). Plutôt que de les compresser
+   à leur largeur minimale (somme des minmax ci-dessous ≈ 800px). Plutôt que de les compresser
    davantage au point de rendre le contenu illisible ou invisible, min-width sur .prest-row
    fait apparaître un scroll horizontal ici — les données restent toutes visibles et lisibles,
    quitte à devoir défiler. */
 .list-card-body { padding: 4px 0; overflow-x: auto; }
 
-/* Colonnes en minmax() plutôt qu'en px fixes : chaque colonne peut se réduire jusqu'à un
-   plancher (aligné sur les contraintes réelles du contenu — ex. .nature-badge a déjà un
-   min-width de 124px dans badges.css, donc la colonne Type ne peut pas descendre en dessous
-   sans que le badge déborde) puis regagne sa taille confortable dès que la largeur le permet. */
+/* Ordre et largeurs alignés sur .sd-staffing-row (popup Suivre la demande, 2026-10-15) : Statut ·
+   Type · Profil · Qui · Dates · Restant · TJM · Occupation · [Modifier]. La colonne Type n'est plus
+   calée sur un badge pilule (texte simple désormais, .prest-type-label) donc peut descendre plus
+   bas que le plancher de 124px qu'imposait .nature-badge ; la place gagnée va à la colonne
+   "Restant" (fusionnée avec l'ancienne alerte dédiée). */
 .prest-row {
   display: grid;
   grid-template-columns:
-    minmax(92px,100px) minmax(128px,130px) minmax(70px,130px) minmax(140px,1fr)
-    minmax(130px,190px) minmax(60px,90px) minmax(50px,70px) 26px 36px;
-  align-items: center; gap: 10px; min-width: 844px;
+    minmax(92px,100px) minmax(72px,100px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,80px) minmax(70px,100px) minmax(50px,70px) 36px;
+  align-items: center; gap: 10px; min-width: 800px;
   padding: 10px 16px; border-bottom: 1px solid var(--border);
   transition: background .1s;
 }
@@ -36,13 +37,45 @@
 .prest-header-row {
   display: grid;
   grid-template-columns:
-    minmax(92px,100px) minmax(128px,130px) minmax(70px,130px) minmax(140px,1fr)
-    minmax(130px,190px) minmax(60px,90px) minmax(50px,70px) 26px 36px;
-  gap: 10px; min-width: 844px; padding: 6px 16px;
+    minmax(92px,100px) minmax(72px,100px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,80px) minmax(70px,100px) minmax(50px,70px) 36px;
+  gap: 10px; min-width: 800px; padding: 6px 16px;
   font-size:var(--text-2xs); font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-muted);
   border-bottom: 1px solid var(--border); background: var(--surface3);
 }
+
+/* Tableau dédié "Consultants staffés" (popup Suivre la demande, mode groupé) — grid séparée de
+   .prest-row/.prest-header-row (Vue liste) : la Vue liste a en plus un rappel d'entité dans la
+   sous-ligne "Qui" (déjà en en-tête de page ici), donc pas réutilisable directement sans risquer
+   de régresser la Vue liste, même si l'ordre et les largeurs de colonnes sont désormais identiques
+   (2026-10-15). Les classes internes (.status-pill, .prest-type-label, .prest-type, .prest-profil,
+   .prest-client, .prest-dates, .prest-restant, .prest-tjm, .prest-activite) restent partagées pour
+   garder le même style visuel. */
+.sd-staffing-row {
+  display: grid;
+  grid-template-columns:
+    minmax(92px,100px) minmax(72px,100px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,80px) minmax(70px,100px) minmax(50px,70px) 36px;
+  align-items: center; gap: 10px; min-width: 800px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+.sd-staffing-row:last-child { border-bottom: none; }
+.sd-staffing-row:hover { background: rgba(255,255,255,.02); }
+
+.sd-staffing-header-row {
+  display: grid;
+  grid-template-columns:
+    minmax(92px,100px) minmax(72px,100px) minmax(70px,130px) minmax(140px,1fr)
+    minmax(130px,190px) minmax(60px,80px) minmax(70px,100px) minmax(50px,70px) 36px;
+  gap: 10px; min-width: 800px; padding: 6px 16px;
+  font-size:var(--text-2xs); font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); background: var(--surface3);
+}
+
+.prest-restant { font-size:var(--text-sm); color: var(--text-dim); text-align: center; }
 
 .prest-profil { font-size:var(--text-sm); color: var(--text-dim); }
 
@@ -63,7 +96,15 @@
 .prest-tjm small { display: block; font-size:var(--text-2xs); color: var(--text-muted); font-weight: 400; }
 
 .prest-activite { font-size:var(--text-base); font-weight: 600; color: var(--text-dim); text-align: right; }
-.prest-alert { text-align: center; font-size:var(--text-base); }
+
+/* Type en texte simple, plus de pastille pilule nulle part dans l'outil (retour utilisateur
+   2026-10-15 : ne s'intégrait pas aux nouvelles interfaces — la pastille .nature-badge a été
+   retirée de badges.css). Dans un tableau déjà dense en repères visuels (pastille de statut,
+   couleurs), elle faisait doublon et coûtait de la largeur (plancher de 124px) — gagnée ici pour
+   la colonne "Restant". Couleur reprise
+   des classes .nature-mission/.nature-forfait/.nature-projet_interne/.nature-opportunite
+   existantes (badges.css), qui ne portent qu'une couleur, pas la forme pilule. */
+.prest-type-label { font-size:var(--text-sm); font-weight: 600; }
 
 /* Fenêtre étroite : la grille à 9 colonnes fixes (100 à 190px chacune) ne peut plus tenir sur
    une seule ligne — chaque ligne devient une petite carte empilée plutôt que de comprimer/
@@ -81,7 +122,6 @@
   .list-card-body { overflow-x: visible; }
   .prest-row > .status-pill { order: 1; }
   .prest-row > .prest-type  { order: 2; }
-  .prest-row > .prest-alert { order: 3; }
   .prest-row > .prest-client  { order: 4; flex-basis: 100%; }
   .prest-row > .prest-profil  { order: 5; flex-basis: 100%; }
   /* "—" quand le profil est vide (cas fréquent) : garder la ligne a du sens dans la grille
@@ -94,13 +134,19 @@
   .prest-row > .prest-dates { order: 6; flex-basis: 100%; }
   .prest-dates .ext-label, .prest-dates .exit-label { display: inline; margin-left: 8px; }
 
-  /* TJM et Activité sur leur propre ligne (à la suite de celle des dates), avec un libellé
-     explicite ("TJM :", "Activité :") : sans l'en-tête de colonnes du tableau desktop (masqué
-     ci-dessus), une valeur seule comme "5/5" ne veut plus rien dire hors contexte. */
-  .prest-row > .prest-tjm      { order: 7; text-align: left; }
-  .prest-row > .prest-activite { order: 8; margin-left: 16px; }
-  .prest-tjm::before      { content: "TJM : ";      font-weight: 400; color: var(--text-muted); }
-  .prest-activite::before { content: "Activité : "; font-weight: 400; color: var(--text-muted); }
+  /* Restant, TJM et Occupation sur leur propre ligne (à la suite de celle des dates), avec un
+     libellé explicite ("Restant :", "TJM :", "Occupation :") : sans l'en-tête de colonnes du
+     tableau desktop (masqué ci-dessus), une valeur seule comme "5/5" ne veut plus rien dire hors
+     contexte. */
+  .prest-row > .prest-restant  { order: 7; text-align: left; }
+  .prest-row > .prest-tjm      { order: 8; text-align: left; margin-left: 16px; }
+  .prest-row > .prest-activite { order: 9; margin-left: 16px; }
+  /* Sélecteurs scopés à .prest-row (pas juste .prest-restant/.prest-tjm/.prest-activite tout
+     court) pour ne pas injecter ces libellés dans .sd-staffing-row, qui réutilise ces mêmes
+     classes internes mais garde toujours son en-tête de colonnes, à toute largeur. */
+  .prest-row > .prest-restant::before  { content: "Restant : ";  font-weight: 400; color: var(--text-muted); }
+  .prest-row > .prest-tjm::before      { content: "TJM : ";      font-weight: 400; color: var(--text-muted); }
+  .prest-row > .prest-activite::before { content: "Occupation : "; font-weight: 400; color: var(--text-muted); }
   /* Bouton d'édition ancré en haut à droite de la carte plutôt que dans le flux, pour ne
      pas casser l'alignement des lignes de contenu qui précèdent. */
   .prest-row > .prest-edit {

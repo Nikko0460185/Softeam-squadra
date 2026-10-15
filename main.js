@@ -7,12 +7,13 @@ const GANTT_MONTHS = 36;
 const GANTT_OFFSET = -12; // start 12 months before today
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let S = { consultants: [], prestations: [], opportunites: [], candidatures: [] };
+let S = { consultants: [], prestations: [], opportunites: [], candidatures: [], commerciaux: [] };
 let filterCons   = null;  // null = all
+let filterCommercial = null; // null = all — id d'un commercial, restreint par portefeuille client (commercialOwnsClient())
 let filterStatus = 'all'; // bucket commun : 'all' | 'en_cours' | 'en_attente' | 'gagne' | 'perdu'
 let filterType   = 'all'; // 'all' | 'prestation' | 'opportunite' — Vue liste uniquement
 let currentView  = 'gantt';
-let currentProfile = null; // { type: 'manager' } | { type: 'consultant', id }
+let currentProfile = null; // { type: 'manager' } | { type: 'consultant', id } | { type: 'commercial', id }
 let viewMode = 'consultants'; // 'consultants' | 'clients' — bascule de la Vue liste
 
 // Temp modal state
@@ -42,6 +43,7 @@ async function load() {
     if (res.ok) S = await res.json();
     S.opportunites = S.opportunites || [];
     S.candidatures = S.candidatures || [];
+    S.commerciaux  = S.commerciaux  || [];
   } catch(e) {}
 }
 function save() {
@@ -112,10 +114,6 @@ function resultatSoutenanceLabel(r) {
 function natureLabel(n) {
   return { mission:'Mission', forfait:'Forfait', projet_interne:'Projet interne' }[n] || 'Mission';
 }
-function natureBadge(n) {
-  const lbl = natureLabel(n || 'mission');
-  return `<span class="nature-badge nature-${n||'mission'}">${lbl}</span>`;
-}
 
 // Historique des modifications de mission (p.missionEvents : [{id, type, date, resumeDate?}],
 // type = 'prolongation' | 'pause' | 'sortie_anticipee') — plusieurs entrées possibles dans le
@@ -135,6 +133,85 @@ function effectiveEnd(p) {
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 
+// Un commercial "possède" un client si son portefeuille (commercial.clients) contient ce nom,
+// comparaison insensible à la casse/espaces — même nom que celui saisi dans `client` sur une
+// opportunité/prestation (pas de référence par id, un commercial peut être ajouté après coup).
+function commercialOwnsClient(commercial, client) {
+  const needle = (client || '').trim().toLowerCase();
+  return (commercial?.clients || []).some(c => c.trim().toLowerCase() === needle);
+}
+// Cherche, parmi S.commerciaux, celui dont le portefeuille contient ce client — utilisé pour
+// pré-remplir le commercial attaché sur une opportunité/prestation (reste modifiable à la main).
+function findCommercialForClient(client) {
+  return S.commerciaux.find(co => commercialOwnsClient(co, client));
+}
+// Commercial actuellement connecté (profil "commercial" du panneau de lancement), ou null —
+// à utiliser pour restreindre l'affichage à son portefeuille (commercialOwnsClient()).
+function activeCommercial() {
+  return filterCommercial ? S.commerciaux.find(co => co.id === filterCommercial) : null;
+}
+
+// Remplit un <select> "Commercial attaché" (modales Opportunité/Prestation) à partir de
+// S.commerciaux, avec une option vide. Verrouillé sur lui-même pour un profil Commercial
+// connecté — même principe que le verrouillage de f-cons pour un profil Consultant.
+function populateCommercialSelect(selectId, selectedId) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '<option value="">— Aucun —</option>';
+  S.commerciaux.forEach(co => {
+    const o = document.createElement('option');
+    o.value = co.id; o.textContent = co.name;
+    sel.appendChild(o);
+  });
+  const isCommercialProfile = currentProfile?.type === 'commercial';
+  sel.value = isCommercialProfile ? currentProfile.id : (selectedId || '');
+  sel.disabled = isCommercialProfile;
+}
+
+// Pré-remplit le commercial attaché quand le client saisi correspond à un portefeuille connu —
+// seulement si le champ est encore vide (ne jamais écraser un choix déjà fait à la main) et
+// que le champ n'est pas verrouillé sur le profil Commercial connecté.
+function autoSuggestCommercial(clientFieldId, commercialFieldId) {
+  const sel = document.getElementById(commercialFieldId);
+  if (sel.disabled || sel.value) return;
+  const match = findCommercialForClient(document.getElementById(clientFieldId).value);
+  if (match) sel.value = match.id;
+}
+
+// Toutes les prestations qui partagent la même entité (besoin/projet) — client + service
+// client, pas le titre du profil (qui varie par consultant : lead/prod/dev, ou 1 UXR + 2
+// product designers sur le même besoin). Voir decisions/vue-prestation-macro-micro/.
+function prestationsForEntity(client, clientService) {
+  return S.prestations
+    .filter(p => p.client === client && (p.clientService||'') === (clientService||''))
+    .sort((a,b) => a.startDate.localeCompare(b.startDate));
+}
+
+// nature/limite d'UO/commercial sont des réglages d'entité (voir f-nature/f-uo/f-commercial,
+// devenus des champs cachés dans la modale Prestation) : à la création d'une nouvelle
+// prestation, si le client+service saisi correspond à une entité déjà staffée par ailleurs, on
+// hérite de ses réglages plutôt que de les laisser vides — pour un ajout à une entité qui
+// n'existe pas encore, "Réglages de la prestation" (depuis "Suivre la demande") permet de les
+// corriger juste après la création.
+function inheritEntitySettingsFromClient() {
+  const client = document.getElementById('f-client').value;
+  const clientService = document.getElementById('f-service').value;
+  const siblings = prestationsForEntity(client, clientService);
+  if (siblings.length) {
+    const ref = siblings[0];
+    document.getElementById('f-nature').value      = ref.nature || 'mission';
+    document.getElementById('f-uo').value           = ref.limiteUOAn || '';
+    document.getElementById('f-commercial').value   = ref.commercialId || '';
+  } else {
+    // Pas d'entité existante pour hériter : on retombe sur la suggestion par portefeuille
+    // client, comme avant (autoSuggestCommercial()), sans écraser un choix déjà fait.
+    const match = findCommercialForClient(client);
+    if (match && !document.getElementById('f-commercial').value) {
+      document.getElementById('f-commercial').value = match.id;
+    }
+  }
+  updateLockedSections();
+}
+
 // Statut calculé, jamais saisi à la main : une prestation existe toujours déjà confirmée
 // (créée directement ou issue d'une candidature gagnée), donc seule la date (et une éventuelle
 // pause en cours) compte pour savoir où elle en est — pas de risque d'un statut resté "En cours"
@@ -149,7 +226,7 @@ function prestationStatus(p) {
 function currentTjm(p) {
   const today = new Date().toISOString().slice(0,10);
   if (!p.tjmRevisions?.length) return p.tjm;
-  // Une révision peut ne porter qu'un taux d'activité (pas de TJM) : on ignore ces entrées ici,
+  // Une révision peut ne porter qu'un taux d'occupation (pas de TJM) : on ignore ces entrées ici,
   // on cherche la dernière qui renseigne bien un TJM.
   const past = p.tjmRevisions.filter(r => r.date <= today && r.tjm !== undefined);
   return past.length ? past[past.length-1].tjm : p.tjm;
@@ -164,6 +241,64 @@ function currentCoutComplet(c, atDate) {
   return past.length ? past[past.length-1].coutComplet : (c.coutComplet || 0);
 }
 
+// Valeur de départ suggérée pour le TJM d'une nouvelle prestation (jamais en édition) : coût
+// complet actuel du consultant sélectionné, majoré de la même marge cible que le "TC" déjà
+// affiché dans la fiche consultant (updateTcDisplay()) — aucun nouveau champ, juste une
+// suggestion modifiable à la main selon la négociation client. Ne touche jamais un champ déjà
+// rempli (ex: TJM estimé repris d'une opportunité gagnée, qui garde la priorité).
+function prefillTjmFromConsultant() {
+  const tjmField = document.getElementById('f-tjm');
+  if (tjmField.value) return;
+  const consultant = S.consultants.find(c => c.id === document.getElementById('f-cons').value);
+  if (!consultant) return;
+  const cc = currentCoutComplet(consultant, todayStr());
+  if (cc > 0) tjmField.value = Math.round(cc * 1.32);
+}
+
+// Jours ouvrés (lun-ven) réellement compris entre deux dates — un mois de 28 jours n'a pas le
+// même coût qu'un mois de 31 jours.
+function workingDays(start, end) {
+  let count = 0;
+  const d = new Date(start);
+  while (d <= end) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
+// 1 = journée complète, 0.5 = demi-journée (matin/après-midi), 0 = pas d'absence ce jour-là.
+function absenceFraction(consultant, dateStr) {
+  if (!consultant?.absences?.length) return 0;
+  return consultant.absences.reduce((frac, a) => {
+    if (dateStr < a.startDate || dateStr > a.endDate) return frac;
+    return Math.max(frac, a.period ? 0.5 : 1);
+  }, 0);
+}
+
+// Fraction (0 à 1) de jours ouvrés non travaillés par le consultant staffé sur cette prestation,
+// sur l'intersection de la fenêtre de calcul [pStart,pEnd] et de la fenêtre réelle de la
+// prestation. Une pause de mission et une absence individuelle qui tombent sur le même jour ne
+// se cumulent jamais (Math.max, pas +) — cf. decisions/jours-travailles-ca/evidence.md.
+function unavailableFraction(p, consultant, pStart, pEnd) {
+  const winStart = new Date(Math.max(pStart, new Date(p.startDate+'T00:00:00')));
+  const winEnd   = new Date(Math.min(pEnd, new Date(effectiveEnd(p)+'T00:00:00')));
+  if (winStart > winEnd) return 0;
+  let weekdays = 0, unavailable = 0;
+  const d = new Date(winStart);
+  while (d <= winEnd) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) {
+      weekdays++;
+      const dStr = d.toISOString().slice(0,10);
+      unavailable += Math.max(activePause(p, dStr) ? 1 : 0, absenceFraction(consultant, dStr));
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return weekdays > 0 ? unavailable / weekdays : 0;
+}
+
 // ─── DEMO DATA ───────────────────────────────────────────────────────────────
 function seedDemo() {
   const ids = [genId(), genId(), genId(), genId()];
@@ -172,6 +307,10 @@ function seedDemo() {
     { id: ids[1], name: 'Thomas Bernard',  role: 'Chef de Projet',     dateEntree: '2025-06-01', coutComplet: 420 },
     { id: ids[2], name: 'Camille Petit',   role: 'Data Engineer',      dateEntree: '2025-03-01', coutComplet: 410 },
     { id: ids[3], name: 'Antoine Dubois',  role: 'Architecte Cloud',   dateEntree: '2024-09-01', coutComplet: 480 },
+  ];
+  S.commerciaux = [
+    { id: genId(), name: 'Julie Tanguy',   clients: ['Orange', 'Airbus'] },
+    { id: genId(), name: 'Marc Delattre',  clients: ['BNP Paribas', 'Société Générale', 'TotalEnergies'] },
   ];
   const n = new Date();
   const y = n.getFullYear(), m = n.getMonth();
@@ -209,7 +348,7 @@ function seedDemo() {
       client: 'TotalEnergies', clientService: 'Data & Analytics',
       startDate: d(y,m-2,15), endDate: d(y,m+5,14),
       missionEvents: [{ id: genId(), type: 'sortie_anticipee', date: d(y,m+2,28) }],
-      tjm: 690, fte: 5, nature: 'forfait', tjmRevisions: [],
+      fte: 5, nature: 'forfait', prixForfait: 60000, tjmRevisions: [],
       notes: 'Sortie anticipée négociée'
     },
     {
@@ -313,6 +452,10 @@ load().then(() => {
 });
 
 // ─── PROFILE (panneau de lancement) ─────────────────────────────────────────
+// 3 groupes : Manager (vue globale), Commercial (restreint à son portefeuille client,
+// voir commercialOwnsClient()) et Consultant (restreint à sa propre ligne). Les valeurs
+// commercial sont préfixées "commercial:" pour les distinguer des ids consultant dans le
+// même <select> à plat.
 function populateProfileSelect(preselect) {
   const sel = document.getElementById('profile-select');
   sel.innerHTML = '';
@@ -320,12 +463,29 @@ function populateProfileSelect(preselect) {
   manager.value = 'manager';
   manager.textContent = 'Manager — vue globale';
   sel.appendChild(manager);
+
+  if (S.commerciaux.length) {
+    const grp = document.createElement('optgroup');
+    grp.label = 'Commercial';
+    S.commerciaux.forEach(co => {
+      const o = document.createElement('option');
+      o.value = 'commercial:' + co.id;
+      o.textContent = co.name;
+      grp.appendChild(o);
+    });
+    sel.appendChild(grp);
+  }
+
+  const grpCons = document.createElement('optgroup');
+  grpCons.label = 'Consultant';
   S.consultants.forEach(c => {
     const o = document.createElement('option');
     o.value = c.id;
     o.textContent = c.name;
-    sel.appendChild(o);
+    grpCons.appendChild(o);
   });
+  sel.appendChild(grpCons);
+
   if (preselect) sel.value = preselect;
 }
 
@@ -334,15 +494,25 @@ function confirmProfile() {
   if (val === 'manager') {
     currentProfile = { type: 'manager' };
     filterCons = null;
+    filterCommercial = null;
+  } else if (val.startsWith('commercial:')) {
+    const id = val.slice('commercial:'.length);
+    currentProfile = { type: 'commercial', id };
+    filterCons = null;
+    filterCommercial = id;
+    // La restriction par portefeuille client (commercialOwnsClient()) n'a de sens qu'en vue
+    // clients — la vue consultants n'est pas organisée par client et laisserait tout voir.
+    viewMode = 'clients';
   } else {
     currentProfile = { type: 'consultant', id: val };
     filterCons = val;
+    filterCommercial = null;
   }
   closeModal('profile-overlay');
   const badge = document.getElementById('profile-badge-label');
-  badge.textContent = currentProfile.type === 'manager'
-    ? 'Connecté : Manager'
-    : `Connecté : ${S.consultants.find(c => c.id === val)?.name || ''}`;
+  if (currentProfile.type === 'manager') badge.textContent = 'Connecté : Manager';
+  else if (currentProfile.type === 'commercial') badge.textContent = `Connecté : ${S.commerciaux.find(c => c.id === currentProfile.id)?.name || ''}`;
+  else badge.textContent = `Connecté : ${S.consultants.find(c => c.id === val)?.name || ''}`;
   render();
 }
 
@@ -388,7 +558,9 @@ document.addEventListener('keydown', (e) => {
 
 function openProfileSwitcher() {
   document.getElementById('user-menu').removeAttribute('open');
-  const preselect = currentProfile?.type === 'manager' ? 'manager' : currentProfile?.id;
+  const preselect = currentProfile?.type === 'manager' ? 'manager'
+    : currentProfile?.type === 'commercial' ? 'commercial:' + currentProfile.id
+    : currentProfile?.id;
   populateProfileSelect(preselect);
   document.getElementById('profile-overlay').classList.add('open');
   openModalA11y('profile-overlay');
@@ -411,11 +583,16 @@ function render() {
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 function renderSidebar() {
   const isConsultant = currentProfile?.type === 'consultant';
+  const isManager     = currentProfile?.type === 'manager';
   document.getElementById('cons-count').textContent = S.consultants.length;
   const el = document.getElementById('cons-list');
   el.innerHTML = '';
 
-  document.getElementById('btn-add-consultant').style.display = isConsultant ? 'none' : 'flex';
+  // "Ajouter un consultant" : seul le Manager gère le référentiel de consultants (un
+  // Commercial n'en a pas besoin, un Consultant encore moins). Idem pour l'entrée "Gérer les
+  // commerciaux" du menu "Connecté" (voir openCommerciauxManageModal()).
+  document.getElementById('btn-add-consultant').style.display = isManager ? 'flex' : 'none';
+  document.getElementById('btn-manage-commerciaux').style.display = isManager ? '' : 'none';
 
   if (!isConsultant) {
     // All
@@ -444,6 +621,110 @@ function renderSidebar() {
     item.onclick = () => { filterCons = c.id; render(); };
     el.appendChild(item);
   });
+}
+
+// ─── COMMERCIAUX — POPUP DE GESTION (menu "Connecté", Manager uniquement) ──────────────────
+// Aide à la présentation de l'outil (configurer rapidement qui sont les commerciaux et leur
+// portefeuille), pas une fonction finale de l'interface — voir le commentaire dans index.html.
+function openCommerciauxManageModal() {
+  document.getElementById('user-menu').removeAttribute('open');
+  renderCommerciauxManageList();
+  document.getElementById('commerciaux-manage-overlay').classList.add('open');
+  openModalA11y('commerciaux-manage-overlay');
+}
+
+function renderCommerciauxManageList() {
+  const el = document.getElementById('commerciaux-manage-list');
+  el.innerHTML = '';
+  if (!S.commerciaux.length) {
+    el.innerHTML = `<div style="padding:10px 0;color:var(--text-muted);font-size:var(--text-base)">Aucun commercial pour l'instant.</div>`;
+    return;
+  }
+  S.commerciaux.forEach(co => {
+    const item = document.createElement('div');
+    item.className = 'consultant-item';
+    item.innerHTML = `
+      <div class="avatar" style="background:var(--surface2);color:var(--text-dim)">${initials(co.name)}</div>
+      <div class="consultant-name">${co.name}<small>${(co.clients||[]).join(', ')}</small></div>
+      <button class="btn-icon" onclick="editCommercialFromManageList('${co.id}')" title="Modifier" aria-label="Modifier ${co.name}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>`;
+    el.appendChild(item);
+  });
+}
+
+// La modale d'édition (COMMERCIAL MODAL) s'ouvre par-dessus celle-ci, qui se referme pour
+// éviter 2 modales "open" en même temps (ambiguïté sinon sur la touche Échap, voir le
+// gestionnaire global de keydown) — elle se réouvre au retour (cancelCommercialModal(),
+// saveCommercial(), deleteCommercial()).
+function editCommercialFromManageList(id) {
+  closeModal('commerciaux-manage-overlay');
+  openCommercialModal(id);
+}
+
+// ─── COMMERCIAL MODAL (ajout/édition d'un seul commercial) ─────────────────────
+function openCommercialModal(id) {
+  clearFieldErrors(['co-name']);
+  document.getElementById('commercial-overlay').classList.add('open');
+  if (id) {
+    const co = S.commerciaux.find(x => x.id === id);
+    document.getElementById('commercial-modal-title').textContent = 'Modifier le commercial';
+    document.getElementById('btn-del-commercial').style.display = 'block';
+    document.getElementById('co-id').value      = co.id;
+    document.getElementById('co-name').value    = co.name;
+    document.getElementById('co-clients').value = (co.clients || []).join(', ');
+  } else {
+    document.getElementById('commercial-modal-title').textContent = 'Nouveau commercial';
+    document.getElementById('btn-del-commercial').style.display = 'none';
+    document.getElementById('co-id').value = document.getElementById('co-name').value =
+      document.getElementById('co-clients').value = '';
+  }
+  openModalA11y('commercial-overlay');
+}
+
+// Toujours revenir au popup de gestion en quittant cette modale (×, Annuler, Échap, clic en
+// dehors — voir MODAL_CANCEL) : elle n'est jamais ouverte autrement que depuis ce popup.
+function cancelCommercialModal() {
+  closeModal('commercial-overlay');
+  openCommerciauxManageModal();
+}
+
+function saveCommercial() {
+  const id      = document.getElementById('co-id').value;
+  const name    = document.getElementById('co-name').value.trim();
+  const clients = document.getElementById('co-clients').value.split(',').map(s => s.trim()).filter(Boolean);
+  clearFieldErrors(['co-name']);
+  if (!name) {
+    markFieldInvalid('co-name', 'Ce champ est obligatoire.');
+    showToast('Merci de compléter les champs obligatoires en surbrillance', 'error');
+    document.getElementById('co-name').focus();
+    return;
+  }
+  if (id) {
+    const i = S.commerciaux.findIndex(c => c.id === id);
+    if (i >= 0) S.commerciaux[i] = { ...S.commerciaux[i], name, clients: clients.length ? clients : undefined };
+  } else {
+    S.commerciaux.push({ id: genId(), name, ...(clients.length ? { clients } : {}) });
+  }
+  save(); closeModal('commercial-overlay'); render();
+  openCommerciauxManageModal();
+  showToast('Commercial enregistré', 'success');
+}
+
+function deleteCommercial() {
+  const id = document.getElementById('co-id').value;
+  if (!id) return;
+  const nb = S.opportunites.filter(o => o.commercialId === id).length
+    + S.prestations.filter(p => p.commercialId === id).length;
+  const msg = nb > 0
+    ? `Ce commercial est attaché à ${nb} opportunité(s)/prestation(s). Supprimer quand même ?`
+    : 'Supprimer ce commercial ?';
+  if (!confirm(msg)) return;
+  S.commerciaux = S.commerciaux.filter(c => c.id !== id);
+  if (filterCommercial === id) filterCommercial = null;
+  save(); closeModal('commercial-overlay'); render();
+  openCommerciauxManageModal();
+  showToast('Commercial supprimé');
 }
 
 // ─── GANTT ────────────────────────────────────────────────────────────────────
@@ -702,13 +983,16 @@ function pipelineItemFromCandidature(cand) {
 // pipeline sont restreints aux opportunités encore "ouvert" (pas tout le cycle de vie).
 function ganttRowsData() {
   if (viewMode === 'clients') {
+    const commercial = activeCommercial();
     const opps = filterCons
       ? S.opportunites.filter(o => S.candidatures.some(c => c.opportuniteId===o.id && c.consultantId===filterCons))
       : S.opportunites;
     const clients = [...new Set([
       ...opps.map(o => o.client),
       ...S.prestations.filter(p => !filterCons || p.consultantId === filterCons).map(p => p.client),
-    ])].sort((a,b) => a.localeCompare(b));
+    ])]
+      .filter(client => !commercial || commercialOwnsClient(commercial, client))
+      .sort((a,b) => a.localeCompare(b));
 
     return clients.map(client => {
       const prests = S.prestations
@@ -741,7 +1025,7 @@ function renderList() {
 
 // ─── Ligne unifiée Opportunité / Mission ──────────────────────────────────────
 // Une prestation et une opportunité (via une candidature) sont normalisées vers la même
-// forme, pour tenir dans UNE seule chronologie (Statut/Type/Client/Dates/TJM/Activité) —
+// forme, pour tenir dans UNE seule chronologie (Statut/Type/Client/Dates/TJM/Occupation) —
 // c'est ce qui permet de comparer d'un coup d'œil ce qui est en pipeline vs confirmé,
 // au lieu de deux tableaux au format différent.
 // Historique complet d'un type de modification de fin de mission ("1re prolongation au ...,
@@ -777,16 +1061,18 @@ function prestationToRow(p, viewMode) {
 
   const status = prestationStatus(p);
 
-  // Alerte fin de mission proche (< 3 mois) — même seuil et code couleur que le widget
-  // "Événements à venir" des Statistiques (buildEventsDiv()) : rouge sous 30 jours, orange au-delà.
-  let alertLine = '';
-  if (status === 'en_cours') {
-    const daysToEnd = Math.round((new Date(effectiveEnd(p)+'T00:00:00') - new Date(todayStr()+'T00:00:00')) / 86400000);
-    if (daysToEnd >= 0 && daysToEnd <= 90) {
-      const color = daysToEnd <= 30 ? 'var(--red)' : 'var(--orange)';
-      alertLine = `<span title="Fin de mission dans ${daysToEnd} j (${fmtD(effectiveEnd(p))})" style="color:${color}">⚠</span>`;
-    }
+  // Colonne "Restant" = jours restants jusqu'à la fin effective, avec le même code couleur que
+  // l'ancienne alerte dédiée (fusionnées en une seule colonne) : rouge sous 30 jours, orange
+  // entre 31 et 90 jours, neutre au-delà ou si déjà terminée. Même seuil que le widget
+  // "Événements à venir" des Statistiques (buildEventsDiv()).
+  const daysToEnd = Math.round((new Date(effectiveEnd(p)+'T00:00:00') - new Date(todayStr()+'T00:00:00')) / 86400000);
+  let restantColor = '';
+  if (status === 'en_cours' && daysToEnd >= 0 && daysToEnd <= 90) {
+    restantColor = daysToEnd <= 30 ? 'var(--red)' : 'var(--orange)';
   }
+  const restantLine = daysToEnd >= 0
+    ? `<span${restantColor ? ` style="color:${restantColor};font-weight:600"` : ''} title="Fin de mission le ${fmtD(effectiveEnd(p))}">${daysToEnd} j</span>`
+    : '—';
 
   // Vue Client : la carte regroupe déjà par client — l'info qui varie ligne à ligne est le
   // consultant staffé (absente avant ce correctif, cf. opportuniteToRow() qui a toujours fait
@@ -803,9 +1089,9 @@ function prestationToRow(p, viewMode) {
     clientLine, whoLabel: clientLine, // whoLabel : version texte brut de clientLine, pour l'aria-label du bouton Modifier (clientLine peut contenir du HTML dans opportuniteToRow)
     subLine: [p.clientService, ...modifiers].filter(Boolean).join(' · '),
     dateLine,
+    restantLine,
     valueLine: `${tjmCur.toLocaleString('fr-FR')} €/j${hasRevision?`<small>base: ${p.tjm.toLocaleString('fr-FR')} €</small>`:''}`,
     activiteLine: `${(p.fte||5)}/5`,
-    alertLine,
     onClick: `openSuiviDemande(S.prestations.find(x=>x.id==='${p.id}'), null)`,
   };
 }
@@ -844,7 +1130,7 @@ function opportuniteToRow(opp, cands) {
     clientLine: candNames, whoLabel: opp.client,
     subLine: opp.clientService || '',
     dateLine,
-    valueLine: '—', activiteLine: '—', alertLine: '',
+    restantLine: '—', valueLine: '—', activiteLine: '—',
     onClick: `openSuiviDemande(null, S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
@@ -861,7 +1147,7 @@ function candidatureToRow(cand) {
     clientLine: opp.client, whoLabel: opp.client,
     subLine: opp.clientService || '',
     ...oppDateInfo(opp),
-    valueLine: '—', activiteLine: '—', alertLine: '',
+    restantLine: '—', valueLine: '—', activiteLine: '—',
     onClick: `openSuiviDemande(null, S.opportunites.find(x=>x.id==='${opp.id}'))`,
   };
 }
@@ -870,20 +1156,20 @@ function candidatureToRow(cand) {
 // par client), "Client / Service" en Vue Consultants (la carte regroupe déjà par consultant).
 function buildUnifiedTableHtml(items, whoHeader) {
   if (!items.length) return '';
-  const header = `<div class="prest-header-row"><span>Statut</span><span>Type</span><span>Profil</span><span>${whoHeader}</span><span>Dates</span><span style="text-align:right">TJM</span><span style="text-align:right">Activité</span><span></span><span></span></div>`;
+  const header = `<div class="prest-header-row"><span>Statut</span><span>Type</span><span>Profil</span><span>${whoHeader}</span><span>Dates</span><span style="text-align:center">Restant</span><span style="text-align:right">TJM</span><span style="text-align:right">Occupation</span><span></span></div>`;
   const rows = items.slice().sort((a,b) => b.sortDate.localeCompare(a.sortDate)).map(it => `
     <div class="prest-row">
       <span class="status-pill ${it.statusClass}">${it.statusLabel}</span>
       <div class="prest-type">
-        <span class="nature-badge ${it.typeClass}">${it.typeLabel}</span>
+        <span class="prest-type-label ${it.typeClass}">${it.typeLabel}</span>
         ${it.originLine||''}
       </div>
       <div class="prest-profil${it.profilLine?'':' prest-profil-empty'}">${it.profilLine||'<span style="color:var(--text-muted)">—</span>'}</div>
       <div class="prest-client">${it.clientLine}<small>${it.subLine||''}</small></div>
       <div class="prest-dates">${it.dateLine}</div>
+      <div class="prest-restant">${it.restantLine}</div>
       <div class="prest-tjm">${it.valueLine}</div>
       <div class="prest-activite">${it.activiteLine}</div>
-      <div class="prest-alert">${it.alertLine||''}</div>
       <button class="btn-icon prest-edit" onclick="${it.onClick}" title="Modifier" aria-label="Modifier ${it.typeLabel} — ${it.whoLabel}">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>
@@ -936,6 +1222,7 @@ function renderListClients() {
   const prevScrollTop = el.scrollTop;
   el.innerHTML = '';
 
+  const commercial = activeCommercial();
   const opps = filterCons
     ? S.opportunites.filter(o => S.candidatures.some(c => c.opportuniteId===o.id && c.consultantId===filterCons))
     : S.opportunites;
@@ -944,7 +1231,9 @@ function renderListClients() {
     ...S.prestations
       .filter(p => !filterCons || p.consultantId === filterCons)
       .map(p => p.client),
-  ])].sort((a,b) => a.localeCompare(b));
+  ])]
+    .filter(client => !commercial || commercialOwnsClient(commercial, client))
+    .sort((a,b) => a.localeCompare(b));
 
   if (!clients.length) {
     el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucun client${filterCons?' pour ce consultant':''}</div>`;
@@ -1017,9 +1306,9 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
   } else {
     // Pas d'objectif chiffré saisi : à défaut, l'activité (taux d'occupation) sert de repère
     // pour dire si le trimestre est bien engagé commercialement.
-    caStatusPill = kd.occRate >= 80 ? statusPill('Activité soutenue', 'var(--green)', 'var(--green-soft)')
-      : kd.occRate >= 50 ? statusPill('Activité modérée', 'var(--yellow)', 'var(--yellow-soft)')
-      : statusPill('Activité faible', 'var(--red)', 'var(--red-soft)');
+    caStatusPill = kd.occRate >= 80 ? statusPill('Occupation soutenue', 'var(--green)', 'var(--green-soft)')
+      : kd.occRate >= 50 ? statusPill('Occupation modérée', 'var(--yellow)', 'var(--yellow-soft)')
+      : statusPill('Occupation faible', 'var(--red)', 'var(--red-soft)');
   }
   const caTrendBadge = trendBadge(kd.ca, prevKd.ca);
 
@@ -1071,7 +1360,7 @@ function buildKpiStrip(kd, kpiLabel, kpiWorkDays, prevKd, nextKd, nextQLabel, al
   const div = document.createElement('div');
   div.innerHTML = `
     <h3 class="section-title" style="margin-top:0">
-      Activité · ${kpiLabel} · base ${kpiWorkDays} j/trimestre
+      Occupation · ${kpiLabel} · base ${kpiWorkDays} j/trimestre
     </h3>
     <div class="stats-grid" style="margin-bottom:20px">
       <div class="stat-card">
@@ -1278,7 +1567,7 @@ function buildClientTable(curPD, cons, workDays) {
     const totalFte  = cl.missions.reduce((s,p)=>s+(p.fte||5), 0);
     const avgTjm    = Math.round(cl.missions.reduce((s,p)=>s+currentTjm(p), 0) / cl.missions.length);
     const ca        = cl.missions.reduce((s,p)=>s+currentTjm(p)*workDays*(p.fte||5)/5, 0);
-    const natures   = [...new Set(cl.missions.map(p=>natureBadge(p.nature)))].join(' ');
+    const natures   = [...new Set(cl.missions.map(p=>`<span class="prest-type-label nature-${p.nature||'mission'}">${natureLabel(p.nature)}</span>`))].join(' · ');
     const consNames = [...cl.consultants].map(id => {
       const c = S.consultants.find(x=>x.id===id);
       return c ? '<span style="background:'+consColor(id)+'22;color:'+consColor(id)+';padding:1px 6px;border-radius:10px;font-size:var(--text-2xs)">'+initials(c.name)+'</span>' : '';
@@ -1408,9 +1697,15 @@ function renderStats() {
     return s <= pEnd && e >= pStart;
   }
 
+  // Commercial connecté : les Statistiques (CA, marge, pipeline) ne reflètent alors que son
+  // portefeuille client (commercialOwnsClient()), même logique que la restriction par
+  // consultant déjà appliquée ci-dessous via `cons`.
+  const commercial = activeCommercial();
+
   function activeIn(pStart, pEnd, statusFilter) {
     return S.prestations.filter(p =>
       cons.find(c=>c.id===p.consultantId) &&
+      (!commercial || commercialOwnsClient(commercial, p.client)) &&
       (statusFilter ? prestationStatus(p) === statusFilter : prestationStatus(p) !== 'terminee') &&
       overlaps(p, pStart, pEnd)
     );
@@ -1427,6 +1722,7 @@ function renderStats() {
     return S.opportunites.filter(o =>
       o.status === 'ouvert' && o.tjm && o.startDate && o.endDate &&
       (!filterCons || S.candidatures.some(cd => cd.opportuniteId===o.id && cd.consultantId===filterCons)) &&
+      (!commercial || commercialOwnsClient(commercial, o.client)) &&
       overlapsOpp(o, pStart, pEnd)
     );
   }
@@ -1446,36 +1742,6 @@ function renderStats() {
       }
       return true;
     });
-  }
-
-  // Fraction (0 à 1) de jours ouvrés non travaillés par le consultant staffé sur cette prestation,
-  // sur l'intersection de la fenêtre de calcul [pStart,pEnd] et de la fenêtre réelle de la
-  // prestation. Une pause de mission et une absence individuelle qui tombent sur le même jour ne
-  // se cumulent jamais (Math.max, pas +) — cf. decisions/jours-travailles-ca/evidence.md.
-  function unavailableFraction(p, consultant, pStart, pEnd) {
-    const winStart = new Date(Math.max(pStart, new Date(p.startDate+'T00:00:00')));
-    const winEnd   = new Date(Math.min(pEnd, new Date(effectiveEnd(p)+'T00:00:00')));
-    if (winStart > winEnd) return 0;
-    let weekdays = 0, unavailable = 0;
-    const d = new Date(winStart);
-    while (d <= winEnd) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) {
-        weekdays++;
-        const dStr = d.toISOString().slice(0,10);
-        unavailable += Math.max(activePause(p, dStr) ? 1 : 0, absenceFraction(consultant, dStr));
-      }
-      d.setDate(d.getDate() + 1);
-    }
-    return weekdays > 0 ? unavailable / weekdays : 0;
-  }
-  // 1 = journée complète, 0.5 = demi-journée (matin/après-midi), 0 = pas d'absence ce jour-là.
-  function absenceFraction(consultant, dateStr) {
-    if (!consultant?.absences?.length) return 0;
-    return consultant.absences.reduce((frac, a) => {
-      if (dateStr < a.startDate || dateStr > a.endDate) return frac;
-      return Math.max(frac, a.period ? 0.5 : 1);
-    }, 0);
   }
 
   function periodData(pStart, pEnd, wDaysOverride) {
@@ -1547,19 +1813,6 @@ function renderStats() {
   // pour l'instant disparaîtrait à tort de la vue "tous les consultants").
   const allOpps = S.opportunites.filter(o => o.status === 'ouvert'
     && (!filterCons || S.candidatures.some(cd => cd.opportuniteId === o.id && cd.consultantId === filterCons)));
-
-  // Jours ouvrés (lun-ven) réellement compris entre deux dates — un mois de 28 jours
-  // n'a pas le même coût qu'un mois de 31 jours.
-  function workingDays(start, end) {
-    let count = 0;
-    const d = new Date(start);
-    while (d <= end) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) count++;
-      d.setDate(d.getDate() + 1);
-    }
-    return count;
-  }
 
   // Trimestre en cours — indépendant du sélecteur "Échelle" ci-dessus, sert uniquement aux 4 indicateurs du haut
   const MONTH_SHORT = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'];
@@ -2089,6 +2342,80 @@ function buildLineChart(container, periods, rawValues, opts = {}) {
     </svg>`;
 }
 
+// Variante à 2 séries de buildLineChart() ci-dessus — pour comparer une valeur "prévisionnelle"
+// (pointillée) à une valeur "réelle" (pleine) dans le temps. Utilisée par la vue groupée de
+// "Suivre la demande" (CA, staffing) : zéro dépendance externe, contrairement à
+// buildMultiLineChart() qui dépend de l'état de la page Statistiques (hiddenChartSeries,
+// renderStats()) et n'est donc pas réutilisable hors de cette page.
+function buildTwoLineChart(container, periods, seriesA, seriesB, opts = {}) {
+  const W = 760, H = 150;
+  const PAD = { top: 14, right: 14, bottom: 30, left: 48 };
+  const cW  = W - PAD.left - PAD.right;
+  const cH  = H - PAD.top  - PAD.bottom;
+
+  const allValues = [...seriesA.values, ...seriesB.values].filter(v => v !== null && v !== undefined);
+  if (!allValues.length) {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:var(--text-base)">Aucune donnée sur cette période</div>`;
+    return;
+  }
+
+  const rawMin = opts.yMin ?? Math.min(0, ...allValues);
+  const rawMax = opts.yMax ?? Math.max(...allValues);
+  const pad = (rawMax - rawMin) * 0.15 || rawMax * 0.1 || 10;
+  const yMin = Math.max(opts.yMin ?? -Infinity, rawMin - pad);
+  const yMax = opts.yMax ?? rawMax + pad;
+  // decimals>0 pour une série non-entière (ex: staffing réel en équivalents temps plein, voir
+  // renderSuiviDemandeGroupCharts()) — 0 par défaut (euros, décomptes entiers).
+  const decimals = opts.decimals ?? 0;
+  const fmtVal = v => decimals > 0 ? v.toFixed(decimals) : Math.round(v).toLocaleString('fr-FR');
+
+  function xPx(i) { return PAD.left + (periods.length > 1 ? i / (periods.length - 1) : 0.5) * cW; }
+  function yPx(v) { return PAD.top + cH * (1 - (v - yMin) / (yMax - yMin)); }
+
+  let grid = '', xlabels = '';
+  const nT = 4;
+  for (let t = 0; t <= nT; t++) {
+    const v = yMin + (yMax - yMin) * t / nT;
+    const y = yPx(v).toFixed(1);
+    grid += `<line x1="${PAD.left}" x2="${W-PAD.right}" y1="${y}" y2="${y}" stroke="var(--border)" stroke-width="0.8"/>
+      <text x="${PAD.left-5}" y="${y}" text-anchor="end" dominant-baseline="middle" font-size="9" fill="var(--text-muted)">${fmtVal(v)}</text>`;
+  }
+  periods.forEach((pd, i) => {
+    const x = xPx(i).toFixed(1);
+    const label = periods.length <= 12 ? pd.short : (i % Math.ceil(periods.length / 8) === 0 ? pd.short : '');
+    if (label) xlabels += `<text x="${x}" y="${H-5}" text-anchor="middle" font-size="9" fill="var(--text-muted)">${label}</text>`;
+  });
+
+  function buildLine(series) {
+    let pathSegs = [], dots = '', prevI = null;
+    periods.forEach((pd, i) => {
+      const v = series.values[i];
+      const x = xPx(i).toFixed(1);
+      if (v === null || v === undefined) { prevI = null; return; }
+      const y = yPx(v).toFixed(1);
+      pathSegs.push(prevI === null ? `M ${x} ${y}` : `L ${x} ${y}`);
+      dots += `<circle cx="${x}" cy="${y}" r="2.5" fill="${series.color}" stroke="var(--surface)" stroke-width="1"><title>${series.label} — ${pd.label}: ${fmtVal(v)}${opts.unit ? ' '+opts.unit : ''}</title></circle>`;
+      prevI = i;
+    });
+    const dash = series.dash ? ` stroke-dasharray="${series.dash}"` : '';
+    return `<path d="${pathSegs.join(' ')}" fill="none" stroke="${series.color}" stroke-width="2" stroke-linejoin="round"${dash}/>${dots}`;
+  }
+
+  const legend = `<div style="display:flex;gap:16px;font-size:var(--text-xs);margin-bottom:6px">
+      <span style="color:${seriesA.color}">● ${seriesA.label}</span>
+      <span style="color:${seriesB.color}">● ${seriesB.label}</span>
+    </div>`;
+
+  container.innerHTML = `${legend}
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;overflow:visible">
+      ${grid}
+      <line x1="${PAD.left}" x2="${PAD.left}" y1="${PAD.top}" y2="${H-PAD.bottom}" stroke="var(--border)" stroke-width="1"/>
+      ${buildLine(seriesA)}
+      ${buildLine(seriesB)}
+      ${xlabels}
+    </svg>`;
+}
+
 // ─── FILTER ───────────────────────────────────────────────────────────────────
 // Vocabulaire commun de statut, partagé par Prestation/Opportunité/Candidature — un même
 // bouton de filtre ("En attente", "Gagnées"...) doit regrouper le statut équivalent des 3
@@ -2186,7 +2513,7 @@ function openPrestModal(p, forceConsId) {
     document.getElementById('prest-modal-title').textContent = 'Ajouter une prestation';
     document.getElementById('btn-del-prest').style.display = 'none';
     document.getElementById('f-id').value       = '';
-    document.getElementById('f-nature').value   = '';
+    document.getElementById('f-nature').value   = 'mission';
     document.getElementById('f-titre').value    = '';
     document.getElementById('f-client').value   = '';
     document.getElementById('f-service').value  = '';
@@ -2196,13 +2523,16 @@ function openPrestModal(p, forceConsId) {
     document.getElementById('f-prix-forfait').value = '';
     document.getElementById('f-fte').value      = '5';
     document.getElementById('f-uo').value       = '';
+    document.getElementById('f-commercial').value = '';
     document.getElementById('f-notes').value    = '';
     modalMissionEvents = [];
     modalRevisions = [];
     document.getElementById('f-opportunite-id').value = '';
     if (forceConsId) sel.value = forceConsId;
     else if (filterCons) sel.value = filterCons;
+    prefillTjmFromConsultant();
   }
+  if (p) document.getElementById('f-commercial').value = p.commercialId || '';
 
   // p sans opportuniteId : rien à dire tant qu'on ne sait pas si l'utilisateur va en attacher une
   // (cas d'une prestation en cours de création qui n'est pas issue d'une candidature gagnée).
@@ -2228,7 +2558,7 @@ function openPrestModal(p, forceConsId) {
   openModalA11y('prest-overlay');
 }
 
-// TJM initial/Taux d'activité et Modification de la mission ne sont des champs de "définition"
+// TJM initial/Taux d'occupation et Modification de la mission ne sont des champs de "définition"
 // qu'à la création directe d'une prestation (pas issue d'une opportunité) : dès que la prestation
 // existe déjà (édition) ou qu'elle vient d'une candidature gagnée, ils passent en lecture seule —
 // tout changement passe alors par les tables de tarification/modification ci-dessous. Les 2
@@ -2261,7 +2591,7 @@ function updateLockedSections() {
   }
 
   // Cas particulier : une prestation issue d'une candidature gagnée n'a pas forcément hérité
-  // d'un TJM (champ optionnel côté Opportunité). Verrouiller quand même le TJM/Taux d'activité
+  // d'un TJM (champ optionnel côté Opportunité). Verrouiller quand même le TJM/Taux d'occupation
   // rendrait ce champ obligatoire invisible, donc impossible à corriger (bug constaté en test).
   // Le verrouillage tarification ne s'applique donc que s'il y a effectivement une valeur reprise.
   const hasBaseTjm  = !!document.getElementById('f-tjm').value;
@@ -2289,6 +2619,7 @@ function cancelPrestModal() {
     if (!confirm('Des modifications non enregistrées seront perdues. Annuler quand même ?')) return;
   }
   closeModal('prest-overlay');
+  returnToSuiviDemande();
 }
 
 // Modification de la mission et Révisions TJM sont des modifications d'une prestation déjà
@@ -2345,12 +2676,16 @@ function renderMissionEvents() {
     return;
   }
   modalMissionEvents.forEach(e => {
+    // Une pause est un réglage d'entité (voir "Réglages de la prestation") : affichée ici pour
+    // le contexte, mais pas supprimable depuis la modale Prestation individuelle.
+    const delBtn = e.type === 'pause' ? '' :
+      `<button class="btn-icon" onclick="removeMissionEvent('${e.id}')" title="Supprimer" aria-label="Supprimer cette modification" style="width:22px;height:22px;font-size:var(--text-sm)">×</button>`;
     tbody.innerHTML += `
       <tr>
         <td>${MISSION_EVENT_LABELS[e.type] || e.type}</td>
         <td>${fmtD(e.date)}</td>
         <td>${e.resumeDate ? fmtD(e.resumeDate) : '—'}</td>
-        <td><button class="btn-icon" onclick="removeMissionEvent('${e.id}')" title="Supprimer" aria-label="Supprimer cette modification" style="width:22px;height:22px;font-size:var(--text-sm)">×</button></td>
+        <td>${delBtn}</td>
       </tr>`;
   });
 }
@@ -2434,7 +2769,7 @@ function updateBadges() {
     statusEl.className = 'status-pill';
   }
 
-  // Le résumé (dates, TJM actuel, taux d'activité, marge, dernière modification) ne s'affiche
+  // Le résumé (dates, TJM actuel, taux d'occupation, marge, dernière modification) ne s'affiche
   // que pour une prestation verrouillée (existe déjà, ou vient d'une opportunité) : à la création
   // directe, rien à résumer par définition — on ne sait pas encore ce qui sera fait de la mission.
   const locked = !!document.getElementById('f-id').value || !!document.getElementById('f-opportunite-id').value;
@@ -2447,13 +2782,13 @@ function updateBadges() {
   const baseFte = parseInt(document.getElementById('f-fte').value)   || null;
   const tjmRevs = modalRevisions.filter(r => r.tjm !== undefined);
   const fteRevs = modalRevisions.filter(r => r.fte !== undefined);
-  // TJM/taux d'activité "en cours" : dernière révision connue, sinon la valeur de départ — même
+  // TJM/taux d'occupation "en cours" : dernière révision connue, sinon la valeur de départ — même
   // valeur que la 1re/dernière ligne de la table de tarification (renderRevisions()).
   const curTjm = tjmRevs.length ? tjmRevs[tjmRevs.length - 1].tjm : baseTjm;
   const curFte = fteRevs.length ? fteRevs[fteRevs.length - 1].fte : baseFte;
 
   // Taux de marge hebdo = (TJM − coût complet du consultant) / TJM, sur le TJM en cours (pas la
-  // valeur de départ). Le taux d'activité (jours/semaine) n'entre pas dans le calcul : il
+  // valeur de départ). Le taux d'occupation (jours/semaine) n'entre pas dans le calcul : il
   // multiplie recette ET coût de la même façon, un TAUX (contrairement à un montant) reste donc
   // le même quel que soit le temps de présence.
   const margeEl = document.getElementById('marge-hebdo-display');
@@ -2477,7 +2812,7 @@ function updateBadges() {
   }
 
   document.getElementById('current-fte-display').textContent =
-    locked && curFte ? `Taux d'activité actuel : ${curFte}/5` : '';
+    locked && curFte ? `Taux d'occupation actuel : ${curFte}/5` : '';
 
   // Dernière modification de mission enregistrée (n'importe quel type), s'il y en a une —
   // uniquement la plus récente par date d'effet, pas tout l'historique (déjà dans la table
@@ -2494,9 +2829,9 @@ function updateBadges() {
   refreshSuiviDemandeIfOpen();
 }
 
-// Une révision porte un TJM et/ou un taux d'activité (au moins un des deux) + une date. Si une
+// Une révision porte un TJM et/ou un taux d'occupation (au moins un des deux) + une date. Si une
 // entrée existe déjà à cette date, on la complète plutôt que de l'écraser (ex: TJM ajouté un
-// jour, taux d'activité ajouté le même jour plus tard — les deux doivent survivre ensemble).
+// jour, taux d'occupation ajouté le même jour plus tard — les deux doivent survivre ensemble).
 function addRevision() {
   const date   = document.getElementById('rev-date').value;
   const tjmVal = document.getElementById('rev-tjm').value;
@@ -2504,7 +2839,7 @@ function addRevision() {
   const tjm = tjmVal ? parseFloat(tjmVal) : undefined;
   const fte = fteVal ? parseInt(fteVal)   : undefined;
   if (!date) { showToast('Saisissez une date de mise en place', 'error'); return; }
-  if (tjm === undefined && fte === undefined) { showToast('Saisissez un TJM ou un taux d\'activité', 'error'); return; }
+  if (tjm === undefined && fte === undefined) { showToast('Saisissez un TJM ou un taux d\'occupation', 'error'); return; }
   const existing = modalRevisions.find(r => r.date === date);
   if (existing) {
     if (tjm !== undefined) existing.tjm = tjm;
@@ -2528,7 +2863,7 @@ function removeRevision(date) {
 }
 
 // Table tarification = un instantané complet par ligne (valeurs de départ + chaque révision),
-// pas seulement ce qui a changé ce jour-là : une ligne "taux d'activité seul" reprend quand même
+// pas seulement ce qui a changé ce jour-là : une ligne "taux d'occupation seul" reprend quand même
 // le dernier TJM connu, pour que chaque colonne soit toujours lisible. Couleurs alignées sur les
 // tags du haut de modale (TJM en accent, marge au même code vert/jaune/rouge).
 function renderRevisions() {
@@ -2594,6 +2929,7 @@ function commitPrestationFromForm() {
   const nature       = document.getElementById('f-nature').value;
   const titre        = document.getElementById('f-titre').value.trim();
   const notes        = document.getElementById('f-notes').value.trim();
+  const commercialId = document.getElementById('f-commercial').value || undefined;
 
   clearFieldErrors(['f-client', 'f-start', 'f-end', 'f-tjm', 'f-prix-forfait', 'f-cons', 'f-nature']);
   const missing = [];
@@ -2624,7 +2960,7 @@ function commitPrestationFromForm() {
     missionEvents: modalMissionEvents,
     tjm, fte, limiteUOAn, nature, titre, tjmRevisions: modalRevisions,
     prixForfait: nature === 'forfait' ? prixForfait : undefined,
-    notes, opportuniteId,
+    notes, opportuniteId, commercialId,
   };
 
   if (id) {
@@ -2653,6 +2989,7 @@ function savePrestation() {
   if (id === null) return false;
   closeModal('prest-overlay');
   render();
+  returnToSuiviDemande();
   showToast('Prestation enregistrée', 'success');
   return true;
 }
@@ -2701,6 +3038,7 @@ function deletePrestation() {
   save();
   closeSuiviDemande();
   render();
+  returnToSuiviDemande();
   showToast('Prestation supprimée');
 }
 
@@ -2878,6 +3216,8 @@ function openOpportuniteModal(opp, prefillClient) {
     createdLine.hidden = true; // rien à afficher tant qu'elle n'a jamais été enregistrée
     modalCandidatures = [];
   }
+  populateCommercialSelect('of-commercial', opp ? opp.commercialId : '');
+  if (!opp) autoSuggestCommercial('of-client', 'of-commercial');
   renderOpportuniteCandidatures();
   oppModalSnapshot = oppFormState();
   openModalA11y('opportunite-overlay');
@@ -2914,6 +3254,7 @@ function commitOpportuniteFromForm() {
   const fte           = parseInt(document.getElementById('of-fte').value) || undefined;
   const limiteUOAn    = parseInt(document.getElementById('of-uo').value) || undefined;
   const status        = document.getElementById('of-status').value;
+  const commercialId  = document.getElementById('of-commercial').value || undefined;
 
   clearFieldErrors(['of-client', 'of-start', 'of-end']);
   const missing = [];
@@ -2940,7 +3281,7 @@ function commitOpportuniteFromForm() {
   // les lignes sans consultant choisi (brouillon abandonné) sont ignorées.
   const kept = modalCandidatures.filter(c => c.consultantId);
 
-  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, limiteUOAn, createdAt, status };
+  const opp = { id: oppId, client, clientService, titre, startDate, endDate, nature, tjm, fte, limiteUOAn, createdAt, status, commercialId };
   if (id) {
     const i = S.opportunites.findIndex(o => o.id === id);
     if (i >= 0) S.opportunites[i] = opp;
@@ -3172,6 +3513,7 @@ function markCandidatureWonInModal(candId) {
   if (opp.tjm)       document.getElementById('f-tjm').value    = opp.tjm;
   if (opp.fte)       document.getElementById('f-fte').value    = opp.fte;
   if (opp.limiteUOAn) document.getElementById('f-uo').value    = opp.limiteUOAn;
+  if (opp.commercialId) document.getElementById('f-commercial').value = opp.commercialId;
   document.getElementById('f-opportunite-id').value = opp.id;
   showOriginBannerLinked();
   // f-opportunite-id vient d'être renseigné : on relance le verrouillage (openPrestModal() l'a
@@ -3186,12 +3528,141 @@ function markCandidatureWonInModal(candId) {
   prestModalSnapshot = prestFormState();
 }
 
+// ─── RÉGLAGES DE LA PRESTATION — entité (client+clientService), réglages partagés par tous
+// les consultants staffés dessus (voir decisions/vue-prestation-macro-micro/). Toujours ouverte
+// depuis "Suivre la demande" (mode groupé) — ferme celle-ci avant, la rouvre après
+// (suiviDemandeReturnEntity/returnToSuiviDemande(), mécanique commune à cette modale et à
+// l'édition individuelle d'un consultant depuis la liste micro).
+let suiviDemandeReturnEntity = null; // {client, clientService} | null
+let modalPrestationReglagesPauses = []; // [{id, date, resumeDate?}]
+
+function returnToSuiviDemande() {
+  if (!suiviDemandeReturnEntity) return;
+  const { client, clientService } = suiviDemandeReturnEntity;
+  suiviDemandeReturnEntity = null;
+  const ref = prestationsForEntity(client, clientService)[0];
+  if (ref) openSuiviDemande(ref, null);
+}
+
+function openPrestationReglagesModal(client, clientService) {
+  clearFieldErrors(['pr-client']);
+  document.getElementById('pr-original-client').value = client;
+  document.getElementById('pr-original-client-service').value = clientService || '';
+  document.getElementById('pr-client').value = client;
+  document.getElementById('pr-client-service').value = clientService || '';
+  const siblings = prestationsForEntity(client, clientService);
+  const ref = siblings[0] || {};
+  document.getElementById('pr-nature').value = ref.nature || 'mission';
+  document.getElementById('pr-uo').value = ref.limiteUOAn || '';
+  populateCommercialSelect('pr-commercial', ref.commercialId || '');
+
+  // Fusionne les pauses déjà présentes (en théorie identiques sur chaque enregistrement frère,
+  // du fait de la propagation) — dédupliquées par date d'effet.
+  const seen = new Set();
+  modalPrestationReglagesPauses = [];
+  siblings.forEach(p => (p.missionEvents || []).filter(e => e.type === 'pause').forEach(e => {
+    if (seen.has(e.date)) return;
+    seen.add(e.date);
+    modalPrestationReglagesPauses.push({ ...e });
+  }));
+  modalPrestationReglagesPauses.sort((a, b) => a.date.localeCompare(b.date));
+  renderPrestationReglagesPauses();
+
+  document.getElementById('prestation-reglages-overlay').classList.add('open');
+  openModalA11y('prestation-reglages-overlay');
+}
+
+function addPrestationReglagesPause() {
+  const date       = document.getElementById('pr-pause-date').value;
+  const resumeDate = document.getElementById('pr-pause-resume').value;
+  if (!date) { showToast('Saisissez une date d\'effet', 'error'); return; }
+  if (resumeDate && resumeDate <= date) {
+    showToast('La date de reprise doit être après la date d\'effet', 'error'); return;
+  }
+  modalPrestationReglagesPauses = modalPrestationReglagesPauses.filter(e => e.date !== date);
+  modalPrestationReglagesPauses.push({ id: genId(), date, ...(resumeDate ? { resumeDate } : {}) });
+  modalPrestationReglagesPauses.sort((a, b) => a.date.localeCompare(b.date));
+  document.getElementById('pr-pause-date').value   = '';
+  document.getElementById('pr-pause-resume').value = '';
+  renderPrestationReglagesPauses();
+}
+
+function removePrestationReglagesPause(id) {
+  if (!confirm('Supprimer cette pause ?')) return;
+  modalPrestationReglagesPauses = modalPrestationReglagesPauses.filter(e => e.id !== id);
+  renderPrestationReglagesPauses();
+}
+
+function renderPrestationReglagesPauses() {
+  const el = document.getElementById('pr-pause-list');
+  el.innerHTML = '';
+  if (!modalPrestationReglagesPauses.length) {
+    el.innerHTML = `<div style="font-size:var(--text-sm);color:var(--text-muted);padding:6px 0 10px">Aucune pause.</div>`;
+    return;
+  }
+  modalPrestationReglagesPauses.forEach(e => {
+    el.innerHTML += `
+      <div class="revision-item">
+        <span class="revision-date">${fmtD(e.date)}${e.resumeDate ? ` → reprise ${fmtD(e.resumeDate)}` : ' (reprise non connue)'}</span>
+        <button class="btn-icon" onclick="removePrestationReglagesPause('${e.id}')" title="Supprimer" aria-label="Supprimer cette pause" style="width:22px;height:22px;font-size:var(--text-sm)">×</button>
+      </div>`;
+  });
+}
+
+function cancelPrestationReglagesModal() {
+  closeModal('prestation-reglages-overlay');
+  returnToSuiviDemande();
+}
+
+function savePrestationReglages() {
+  const originalClient        = document.getElementById('pr-original-client').value;
+  const originalClientService = document.getElementById('pr-original-client-service').value;
+  const client        = document.getElementById('pr-client').value.trim();
+  const clientService = document.getElementById('pr-client-service').value.trim();
+  const nature        = document.getElementById('pr-nature').value;
+  const limiteUOAn    = parseInt(document.getElementById('pr-uo').value) || undefined;
+  const commercialId  = document.getElementById('pr-commercial').value || undefined;
+  const pauses        = modalPrestationReglagesPauses.map(e => ({ ...e }));
+
+  clearFieldErrors(['pr-client']);
+  if (!client) {
+    markFieldInvalid('pr-client', 'Ce champ est obligatoire.');
+    showToast('Merci de compléter les champs obligatoires en surbrillance', 'error');
+    document.getElementById('pr-client').focus();
+    return;
+  }
+
+  // Renommer déplace TOUTES les prestations de l'ancienne entité vers la nouvelle — recherchées
+  // par leurs valeurs d'origine (pr-original-*), pas par les champs qui viennent d'être modifiés.
+  prestationsForEntity(originalClient, originalClientService).forEach(p => {
+    p.client        = client;
+    p.clientService  = clientService || undefined;
+    p.nature         = nature;
+    p.limiteUOAn     = limiteUOAn;
+    p.commercialId   = commercialId;
+    const kept = (p.missionEvents || []).filter(e => e.type !== 'pause');
+    p.missionEvents = [...kept, ...pauses].sort((a, b) => a.date.localeCompare(b.date));
+  });
+  save();
+  closeModal('prestation-reglages-overlay');
+  // Revenir sur la NOUVELLE entité (l'ancienne n'a plus de prestations si elle a été renommée).
+  suiviDemandeReturnEntity = { client, clientService };
+  returnToSuiviDemande();
+  showToast('Réglages de la prestation enregistrés', 'success');
+}
+
 // ─── SUIVRE LA DEMANDE — fusion Prestation/Opportunité en overlay plein écran ─────────────
-// N'édite jamais de champs dupliqués : les boîtes #prest-modal-box / #opportunite-modal-box
-// sont déplacées (reparenting) depuis leurs overlays respectifs vers cet overlay le temps de
-// l'édition, puis restituées à la fermeture — openPrestModal()/openOpportuniteModal() et tout
-// ce qui lit les champs f-*/of-* continuent de fonctionner sans modification, y compris pour
-// les modales de création (jamais concernées par cette fusion).
+// 2 modes, décidés par openSuiviDemande() selon qu'une prestation existe déjà pour l'entité :
+// - Mode GROUPÉ (prest résolu) : refonte macro+micro du 2026-10-12 (voir decisions/
+//   vue-prestation-macro-micro/) — toujours en lecture seule à l'affichage, construite depuis
+//   S.prestations directement pour TOUTES les prestations de l'entité (client+clientService).
+//   Jamais d'embedding de formulaire (impossible pour N consultants à la fois) : "Modifier" sur
+//   un consultant ou "Réglages de la prestation" ferment cette vue et ouvrent une modale
+//   standalone, qui y revient automatiquement en sortie (returnToSuiviDemande()).
+// - Mode LEGACY (prest non résolu, opportunité pas encore gagnée) : comportement d'origine,
+//   inchangé — #opportunite-modal-box réparentée dans cet overlay le temps de l'édition.
+let suiviDemandeGroupEntity = null; // {client, clientService} | null — entité affichée en mode groupé
+
 function openSuiviDemande(prest, opp) {
   // Capturé avant tout appel à openPrestModal()/openOpportuniteModal() : ces 2 fonctions
   // (et openModalA11y() qu'elles appellent) réécrivent modalTrigger avec le focus interne à
@@ -3209,27 +3680,30 @@ function openSuiviDemande(prest, opp) {
     if (wonCand) prest = S.prestations.find(p => p.id === wonCand.prestationId) || null;
   }
 
-  if (prest) openPrestModal(prest);
-  if (opp)   openOpportuniteModal(opp);
-  // Neutralise les .open individuels posés par les 2 appels ci-dessus : un seul overlay
-  // "ouvert" doit exister à la fois pour que le piège de focus cible sans ambiguïté.
+  if (prest) { openSuiviDemandeGroup(prest, trigger); return; }
+  openSuiviDemandeLegacy(opp, trigger);
+}
+
+// Mode legacy — comportement d'origine, inchangé. Extrait à part (plutôt que resté en ligne
+// dans openSuiviDemande()) pour pouvoir être appelé directement sur une opportunité déjà gagnée
+// — ex: bouton "Voir l'opportunité d'origine" depuis la liste micro du mode groupé
+// (renderSuiviDemandeGroupStaffing()) — sans passer par la résolution opp→prest ci-dessus, qui
+// renverrait sinon systématiquement vers le mode groupé pour une opportunité déjà gagnée.
+function openSuiviDemandeLegacy(opp, trigger) {
+  trigger = trigger || document.activeElement;
+  if (opp) openOpportuniteModal(opp);
   document.getElementById('prest-overlay').classList.remove('open');
   document.getElementById('opportunite-overlay').classList.remove('open');
 
-  const prestSlot = document.getElementById('sd-prest-slot');
+  document.getElementById('sd-entity-header').style.display   = 'none';
+  document.getElementById('sd-charts').style.display          = 'none';
+  document.getElementById('sd-entity-actions').style.display  = 'none';
+  document.getElementById('sd-staffing-section').style.display = 'none';
+  document.getElementById('sd-opp-links').innerHTML = '';
+
   const oppSlot    = document.getElementById('sd-opp-slot');
-  const prestSection = document.getElementById('sd-prest-section');
-  const oppSection    = document.getElementById('sd-opp-section');
-  prestSlot.innerHTML = '';
+  const oppSection = document.getElementById('sd-opp-section');
   oppSlot.innerHTML = '';
-  if (prest) {
-    const box = document.getElementById('prest-modal-box');
-    box.classList.add('suivi-demande-embedded');
-    prestSlot.appendChild(box);
-    prestSection.style.display = '';
-  } else {
-    prestSection.style.display = 'none';
-  }
   if (opp) {
     const box = document.getElementById('opportunite-modal-box');
     box.classList.add('suivi-demande-embedded');
@@ -3239,37 +3713,433 @@ function openSuiviDemande(prest, opp) {
     oppSection.style.display = 'none';
   }
 
-  suiviDemandePrest = prest || null;
+  suiviDemandePrest = null;
   suiviDemandeOpp   = opp || null;
-  renderSuiviDemandeKpis(suiviDemandePrest, suiviDemandeOpp);
-  renderSuiviDemandeTimeline(suiviDemandePrest, suiviDemandeOpp);
+  suiviDemandeGroupEntity = null;
+  renderSuiviDemandeKpis(null, suiviDemandeOpp);
+  renderSuiviDemandeTimeline(null, suiviDemandeOpp);
+  setSuiviDemandeFooterMode('legacy');
 
   document.getElementById('suivi-demande-overlay').classList.add('open');
   openModalA11y('suivi-demande-overlay');
   modalTrigger = trigger;
 }
 
-// Restitue les 2 boîtes à leur overlay d'origine avant de masquer "Suivre la demande" —
-// indispensable pour que la prochaine modale de création (Nouvelle prestation/opportunité)
+function setSuiviDemandeFooterMode(mode) {
+  const isGroup = mode === 'group';
+  document.getElementById('sd-btn-cancel').style.display = isGroup ? 'none' : '';
+  document.getElementById('sd-btn-save').style.display   = isGroup ? 'none' : '';
+  document.getElementById('sd-btn-close').style.display  = isGroup ? '' : 'none';
+}
+
+// ─── Mode groupé ────────────────────────────────────────────────────────────
+function openSuiviDemandeGroup(prest, trigger) {
+  const prests = prestationsForEntity(prest.client, prest.clientService);
+  suiviDemandeGroupEntity = { client: prest.client, clientService: prest.clientService };
+  suiviDemandePrest = null;
+  suiviDemandeOpp   = null;
+
+  const commercial = S.commerciaux.find(c => c.id === prests[0]?.commercialId);
+  document.getElementById('sd-entity-name').textContent = prest.client + (prest.clientService ? ' · ' + prest.clientService : '');
+  document.getElementById('sd-entity-commercial').textContent = commercial ? `Commercial : ${commercial.name}` : '';
+  document.getElementById('sd-entity-header').style.display   = 'flex';
+  document.getElementById('sd-charts').style.display          = '';
+  document.getElementById('sd-entity-actions').style.display  = 'flex';
+  document.getElementById('sd-staffing-section').style.display = '';
+  document.getElementById('sd-opp-section').style.display     = 'none';
+
+  renderSuiviDemandeGroupKpis(prests);
+  renderSuiviDemandeGroupCharts(prests);
+  renderSuiviDemandeGroupStaffing(prests);
+  renderSuiviDemandeGroupTimeline(prests);
+  renderSuiviDemandeGroupOppLinks(prests);
+  setSuiviDemandeFooterMode('group');
+
+  document.getElementById('suivi-demande-overlay').classList.add('open');
+  openModalA11y('suivi-demande-overlay');
+  modalTrigger = trigger;
+}
+
+function openReglagesFromSuiviDemande() {
+  if (!suiviDemandeGroupEntity) return;
+  const { client, clientService } = suiviDemandeGroupEntity;
+  suiviDemandeReturnEntity = { client, clientService };
+  closeModal('suivi-demande-overlay');
+  openPrestationReglagesModal(client, clientService);
+}
+
+function editConsultantFromSuiviDemande(prestId) {
+  const p = S.prestations.find(x => x.id === prestId);
+  if (!p) return;
+  suiviDemandeReturnEntity = { client: p.client, clientService: p.clientService };
+  closeModal('suivi-demande-overlay');
+  openPrestModal(p);
+}
+
+// "Voir les candidatures" depuis le mode groupé — un seul bouton après la frise chronologique
+// (pas un par consultant, voir renderSuiviDemandeGroupOppLinks()), ouvre la section Candidatures
+// de l'opportunité (ajout/modification/suppression de tous les candidats en un seul endroit).
+// Contrairement à editConsultantFromSuiviDemande() ci-dessus, pas besoin de fermer
+// "suivi-demande-overlay" : openSuiviDemandeLegacy() réutilise le même overlay, juste basculé en
+// mode legacy. Toujours appelée depuis le mode groupé actuellement affiché (suiviDemandeGroupEntity)
+// — suiviDemandeReturnEntity reste posé pour que cancelSuiviDemande()/saveSuiviDemande() y
+// reviennent en sortant.
+function viewOriginOpportunite(oppId) {
+  const opp = S.opportunites.find(o => o.id === oppId);
+  if (!opp || !suiviDemandeGroupEntity) return;
+  suiviDemandeReturnEntity = suiviDemandeGroupEntity;
+  openSuiviDemandeLegacy(opp);
+}
+
+// Un bouton par opportunité distincte parmi les prestations de l'entité (dédupliqué) — dans le
+// cas courant (1 seule opportunité à l'origine de toute l'entité), ça donne naturellement 1 seul
+// bouton. Rien si aucune prestation n'a d'opportuniteId (créées directement).
+function renderSuiviDemandeGroupOppLinks(prests) {
+  const el = document.getElementById('sd-opp-links');
+  const oppIds = [...new Set(prests.map(p => p.opportuniteId).filter(Boolean))];
+  el.innerHTML = oppIds.map(id => {
+    const opp = S.opportunites.find(o => o.id === id);
+    if (!opp) return '';
+    return `<button class="btn-primary" onclick="viewOriginOpportunite('${id}')">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      Voir l'opportunité
+    </button>`;
+  }).join(' ');
+}
+
+// CA "à vie" d'une prestation, plafonné à une date donnée — base commune à caAccumuleADate()
+// (plafond = aujourd'hui) et aux points du graphique CA (plafond = fin de chaque mois affiché).
+// Nature-aware comme periodData() : mission réduite par pauses/absences, forfait proratisé
+// (jamais réduit par une pause/absence, juste étalé dans le temps), projet interne = 0.
+function caAtDate(p, asOfDate) {
+  const nature = p.nature || 'mission';
+  if (nature === 'projet_interne') return 0;
+  const start = new Date(p.startDate + 'T00:00:00');
+  const realEnd = new Date(effectiveEnd(p) + 'T00:00:00');
+  const cap = asOfDate < realEnd ? asOfDate : realEnd;
+  if (cap < start) return 0;
+  if (nature === 'forfait') {
+    const totalWD = workingDays(start, realEnd);
+    const elapsedWD = workingDays(start, cap);
+    return totalWD > 0 ? (p.prixForfait || 0) * (elapsedWD / totalWD) : 0;
+  }
+  const wDays = workingDays(start, cap);
+  const consultant = S.consultants.find(c => c.id === p.consultantId);
+  return currentTjm(p) * wDays * (1 - unavailableFraction(p, consultant, start, cap)) * (p.fte||5)/5;
+}
+function caAccumuleADate(p) {
+  return caAtDate(p, new Date(todayStr() + 'T00:00:00'));
+}
+
+// CA "max attendu" — même principe que caAtDate() mais sur les valeurs INITIALES (p.tjm, pas
+// currentTjm() ; p.endDate prévue initialement, pas effectiveEnd()) : un repère figé, jamais
+// réduit par une pause/absence, jamais recalculé après la signature. caMaxAttendu() = la valeur
+// finale (asOfDate = la fin initiale elle-même) ; caMaxAtDate() sert aux points du graphique.
+function caMaxAtDate(p, asOfDate) {
+  const nature = p.nature || 'mission';
+  if (nature === 'projet_interne') return 0;
+  const start = new Date(p.startDate + 'T00:00:00');
+  const initialEnd = new Date(p.endDate + 'T00:00:00');
+  const cap = asOfDate < initialEnd ? asOfDate : initialEnd;
+  if (cap < start) return 0;
+  if (nature === 'forfait') {
+    const totalWD = workingDays(start, initialEnd);
+    const elapsedWD = workingDays(start, cap);
+    return totalWD > 0 ? (p.prixForfait || 0) * (elapsedWD / totalWD) : 0;
+  }
+  const wDays = workingDays(start, cap);
+  return (p.tjm || 0) * wDays * (p.fte||5)/5;
+}
+function caMaxAttendu(p) {
+  return caMaxAtDate(p, new Date(p.endDate + 'T00:00:00'));
+}
+
+// Délai de réponse moyen (push→soutenance, soutenance→démarrage), agrégé sur toutes les
+// candidatures gagnées ayant mené aux prestations de l'entité — même esprit que
+// computeDelaiReponse() (mode legacy), mais lit S.candidatures/S.opportunites directement
+// plutôt que l'état d'un formulaire ouvert, et moyenne sur plusieurs candidatures.
+function computeGroupDelaiReponse(prests) {
+  const pushSoutenance = [], soutenanceDemarrage = [];
+  prests.forEach(p => {
+    if (!p.opportuniteId) return;
+    const cand = S.candidatures.find(c => c.opportuniteId === p.opportuniteId && c.consultantId === p.consultantId && c.status === 'gagnee');
+    if (!cand) return;
+    const pushes = (cand.bookPushes || []).map(x => x.date).sort();
+    const soutenances = (cand.soutenances || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    const validees = soutenances.filter(s => s.resultat === 'validee');
+    const retenue = validees.length ? validees[validees.length-1] : (soutenances.length ? soutenances[soutenances.length-1] : null);
+    if (pushes.length && retenue) {
+      const d = Math.round((new Date(retenue.date) - new Date(pushes[0])) / 86400000);
+      if (d >= 0) pushSoutenance.push(d);
+    }
+    if (retenue) {
+      const d = Math.round((new Date(p.startDate) - new Date(retenue.date)) / 86400000);
+      if (d >= 0) soutenanceDemarrage.push(d);
+    }
+  });
+  const avg = arr => arr.length ? Math.round(arr.reduce((s,v) => s+v, 0) / arr.length) : null;
+  const avgPushSout = avg(pushSoutenance);
+  const avgSoutDem  = avg(soutenanceDemarrage);
+  const total = avgPushSout !== null && avgSoutDem !== null ? avgPushSout + avgSoutDem : (avgPushSout ?? avgSoutDem);
+  const lines = [];
+  if (avgPushSout !== null) lines.push(`Envoi → soutenance : ${avgPushSout} j (moy.)`);
+  if (avgSoutDem  !== null) lines.push(`Soutenance → démarrage : ${avgSoutDem} j (moy.)`);
+  return { total, lines };
+}
+
+function renderSuiviDemandeGroupKpis(prests) {
+  const el = document.getElementById('sd-kpis');
+  const nature = prests[0]?.nature || 'mission';
+
+  const statuses = prests.map(prestationStatus);
+  const enCours  = statuses.filter(s => s === 'en_cours').length;
+  const enPause  = statuses.filter(s => s === 'en_pause').length;
+  const terminee = statuses.filter(s => s === 'terminee').length;
+  // Préciser "consultant(s)" à chaque pastille : "1 en cours" seul seul ne dit pas de quoi (ligne
+  // de contexte entre le badge "Nature" et le compte de staffing plus bas).
+  const statusPills = [
+    enCours  ? `<span class="status-pill pill-en_cours">${enCours} consultant${enCours > 1 ? 's' : ''} en cours</span>` : '',
+    enPause  ? `<span class="status-pill pill-en_pause">${enPause} consultant${enPause > 1 ? 's' : ''} en pause</span>` : '',
+    terminee ? `<span class="status-pill pill-terminee">${terminee} consultant${terminee > 1 ? 's' : ''} terminé${terminee > 1 ? 's' : ''}</span>` : '',
+  ].filter(Boolean).join(' ');
+
+  const minStart = prests.reduce((m,p) => (!m || p.startDate < m) ? p.startDate : m, null);
+  const maxEnd   = prests.reduce((m,p) => { const e = effectiveEnd(p); return (!m || e > m) ? e : m; }, null);
+  const joursRestants = Math.round((new Date(maxEnd+'T00:00:00') - new Date(todayStr()+'T00:00:00')) / 86400000);
+
+  const delai = computeGroupDelaiReponse(prests);
+  const activeCount = statuses.filter(s => s !== 'terminee').length;
+  const limiteUO = prests[0]?.limiteUOAn;
+
+  const caAccumule = prests.reduce((s,p) => s + caAccumuleADate(p), 0);
+  const caMax      = prests.reduce((s,p) => s + caMaxAttendu(p), 0);
+
+  el.innerHTML = `<div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Nature & statut</span></div>
+      <div class="stat-value" style="font-size:var(--text-md)"><span class="nature-${nature}">${natureLabel(nature)}</span></div>
+      <div class="stat-sub" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${statusPills}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Durée</span></div>
+      <div class="stat-value" style="font-size:var(--text-md)">${fmtD(minStart)} → ${fmtD(maxEnd)}</div>
+      <div class="stat-sub">${joursRestants >= 0 ? joursRestants + ' jour' + (joursRestants > 1 ? 's' : '') + ' restant' + (joursRestants > 1 ? 's' : '') : 'Terminée'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Délai de réponse</span></div>
+      <div class="stat-value">${delai.total !== null ? delai.total + ' j' : '—'}</div>
+      ${delai.lines.map(l => `<div class="stat-sub">${l}</div>`).join('')}
+    </div>
+    <div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">Staffing</span></div>
+      <div class="stat-value">${activeCount} actif${activeCount > 1 ? 's' : ''}<span style="font-size:var(--text-sm);color:var(--text-muted)"> · ${prests.length} au total</span></div>
+      <div class="stat-sub">${limiteUO ? `Limite d'UO : ${limiteUO} j/an` : "Pas de limite d'UO"}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label-row"><span class="stat-label">CA</span></div>
+      <div class="stat-value">${Math.round(caAccumule).toLocaleString('fr-FR')} €</div>
+      <div class="stat-sub">CA max attendu : ${Math.round(caMax).toLocaleString('fr-FR')} €</div>
+    </div>
+  </div>`;
+}
+
+// Mois calendaires couvrant l'entité, de la date de début la plus ancienne à la date de fin
+// INITIALE la plus tardive (l'horizon "prévisionnel" — une vraie prolongation déplacerait ce
+// repère, volontairement laissé tel quel ici : le graphique montre l'écart, pas une cible mouvante).
+function groupMonthBuckets(prests) {
+  const minStart = prests.reduce((m,p) => (!m || p.startDate < m) ? p.startDate : m, null);
+  const maxEnd   = prests.reduce((m,p) => (!m || p.endDate > m) ? p.endDate : m, null);
+  const start = new Date(minStart + 'T00:00:00');
+  const last  = new Date(maxEnd + 'T00:00:00');
+  const months = [];
+  let d = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastMonth = new Date(last.getFullYear(), last.getMonth(), 1);
+  while (d <= lastMonth) {
+    months.push({ date: new Date(d), short: d.toLocaleDateString('fr-FR', {month:'short'}), label: d.toLocaleDateString('fr-FR', {month:'long', year:'numeric'}) });
+    d = new Date(d.getFullYear(), d.getMonth()+1, 1);
+  }
+  return months;
+}
+
+function renderSuiviDemandeGroupCharts(prests) {
+  const el = document.getElementById('sd-charts');
+  const months = groupMonthBuckets(prests);
+  const today = new Date(todayStr() + 'T00:00:00');
+  const monthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
+  const monthEnd   = d => new Date(d.getFullYear(), d.getMonth()+1, 0);
+  // "Réel" plafonné à aujourd'hui pour le mois EN COURS (sinon ce mois n'affiche jamais rien
+  // avant sa toute fin, cf. l'absence du 12-16 octobre non visible le 12 octobre) — null
+  // seulement pour un mois qui n'a pas encore commencé.
+  const reelAsOf = d => monthStart(d) > today ? null : (monthEnd(d) < today ? monthEnd(d) : today);
+
+  const caPrevis = months.map(m => prests.reduce((s,p) => s + caMaxAtDate(p, monthEnd(m.date)), 0));
+  const caReel   = months.map(m => {
+    const asOf = reelAsOf(m.date);
+    return asOf ? prests.reduce((s,p) => s + caAtDate(p, asOf), 0) : null;
+  });
+
+  const staffPrevis = months.map(m => prests.filter(p =>
+    new Date(p.startDate+'T00:00:00') <= monthEnd(m.date) && new Date(p.endDate+'T00:00:00') >= monthEnd(m.date)
+  ).length);
+  // "Réel" : somme des taux d'activité journaliers (1 = journée pleine, 0,5 = demi-journée
+  // d'absence, 0 = pause ou absence journée complète — pause et absence ne se cumulent jamais,
+  // même règle de non-cumul que pour le CA, voir unavailableFraction()) plutôt qu'un décompte
+  // entier de têtes : une demi-journée d'absence fait maintenant baisser la courbe de 0,5 au
+  // lieu d'être invisible (le consultant restait compté comme présent) ou de faire disparaître
+  // toute une personne.
+  const staffReel = months.map(m => {
+    const asOf = reelAsOf(m.date);
+    if (!asOf) return null;
+    const asOfStr = asOf.toISOString().slice(0,10);
+    return prests.reduce((sum, p) => {
+      if (!(new Date(p.startDate+'T00:00:00') <= asOf && new Date(effectiveEnd(p)+'T00:00:00') >= asOf)) return sum;
+      const consultant = S.consultants.find(c => c.id === p.consultantId);
+      const unavailable = Math.max(activePause(p, asOfStr) ? 1 : 0, absenceFraction(consultant, asOfStr));
+      return sum + (1 - unavailable);
+    }, 0);
+  });
+
+  el.innerHTML = `<div class="ca-marge-charts-grid">
+    <div class="chart-container">
+      <div class="chart-title ca-marge-chart-title">CA prévisionnel vs accumulé</div>
+      <div id="sd-chart-ca"></div>
+    </div>
+    <div class="chart-container">
+      <div class="chart-title ca-marge-chart-title">Staffing prévisionnel vs réel</div>
+      <div id="sd-chart-staffing"></div>
+    </div>
+  </div>`;
+
+  buildTwoLineChart(document.getElementById('sd-chart-ca'), months,
+    { label: 'CA max attendu', values: caPrevis, color: 'var(--text-muted)', dash: '4,3' },
+    { label: 'CA accumulé', values: caReel, color: 'var(--accent)' },
+    { unit: '€' });
+  buildTwoLineChart(document.getElementById('sd-chart-staffing'), months,
+    { label: 'Staffing prévisionnel', values: staffPrevis, color: 'var(--text-muted)', dash: '4,3' },
+    { label: 'Staffing réel', values: staffReel, color: 'var(--green)' },
+    { decimals: 1 });
+}
+
+// Table dédiée (pas buildUnifiedTableHtml() de la Vue liste — colonnes différentes demandées
+// ici : pas de rappel d'entité par ligne déjà en en-tête de page) mais même famille visuelle
+// (mêmes classes .status-pill/.prest-type-label/.prest-* réutilisées, voir buildStaffingTableHtml()
+// et styles/organisms/list.css). Construite depuis prestationToRow() (comme la Vue liste) pour ne
+// pas dupliquer son calcul de statut/TJM/dates/restant, avec juste clientService neutralisé (déjà
+// affiché dans l'en-tête de la page).
+function renderSuiviDemandeGroupStaffing(prests) {
+  const rows = prests.map(p => ({
+    ...prestationToRow({ ...p, clientService: undefined }, 'clients'),
+    onClick: `editConsultantFromSuiviDemande('${p.id}')`,
+  }));
+  document.getElementById('sd-staffing-list').innerHTML = buildStaffingTableHtml(rows);
+}
+
+// Statut · Type · Profil · Consultant · Dates · Restant · TJM · Occupation · [Modifier] — même
+// ordre que la Vue liste (buildUnifiedTableHtml(), 2026-10-15). Grille CSS dédiée (.sd-staffing-row),
+// pas .prest-row (celle de la Vue liste, à 9 colonnes différentes) — pour ne jamais risquer de la
+// régresser.
+function buildStaffingTableHtml(items) {
+  if (!items.length) return '';
+  const header = `<div class="sd-staffing-header-row"><span>Statut</span><span>Type</span><span>Profil</span><span>Consultant</span><span>Dates</span><span style="text-align:center">Restant</span><span style="text-align:right">TJM</span><span style="text-align:right">Occupation</span><span></span></div>`;
+  const rows = items.slice().sort((a,b) => b.sortDate.localeCompare(a.sortDate)).map(it => `
+    <div class="sd-staffing-row">
+      <span class="status-pill ${it.statusClass}">${it.statusLabel}</span>
+      <div class="prest-type"><span class="prest-type-label ${it.typeClass}">${it.typeLabel}</span></div>
+      <div class="prest-profil${it.profilLine?'':' prest-profil-empty'}">${it.profilLine||'<span style="color:var(--text-muted)">—</span>'}</div>
+      <div class="prest-client">${it.clientLine}<small>${it.subLine||''}</small></div>
+      <div class="prest-dates">${it.dateLine}</div>
+      <div class="prest-restant">${it.restantLine}</div>
+      <div class="prest-tjm">${it.valueLine}</div>
+      <div class="prest-activite">${it.activiteLine}</div>
+      <button class="btn-icon prest-edit" onclick="${it.onClick}" title="Modifier" aria-label="Modifier — ${it.whoLabel}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+    </div>`).join('');
+  return header + rows;
+}
+
+// Mêmes points que buildMissionTimelinePoints() (démarrage → événements de mission → fin), mais
+// depuis les champs stockés de la prestation plutôt que d'un formulaire ouvert (cette vue n'en
+// embarque jamais) — plus un point par absence individuelle du consultant (pas les pauses,
+// déjà résumées dans les KPI macro).
+function buildPrestationTimelinePoints(p) {
+  const points = [];
+  if (p.startDate) points.push({ type: 'demarrage', date: p.startDate, label: 'Démarrage', color: 'var(--accent)' });
+  (p.missionEvents || []).filter(e => e.type !== 'pause').forEach(e => points.push({
+    type: e.type, date: e.date, label: MISSION_EVENT_LABELS[e.type] || e.type,
+    color: e.type === 'prolongation' ? 'var(--orange)' : 'var(--red)',
+  }));
+  const consultant = S.consultants.find(c => c.id === p.consultantId);
+  (consultant?.absences || []).forEach(a => {
+    const days = Math.round((new Date(a.endDate+'T00:00:00') - new Date(a.startDate+'T00:00:00')) / 86400000) + 1;
+    const label = a.period ? `Absence (${a.period === 'matin' ? 'matin' : 'après-midi'})` : `Absence (${days} j)`;
+    points.push({ type: 'absence', date: a.startDate, label, color: 'var(--purple)' });
+  });
+  const effEnd = effectiveEnd(p);
+  points.push(effEnd
+    ? { type: 'fin', date: effEnd, label: 'Date de fin', color: 'var(--text-dim)' }
+    : { type: 'fin-indefinie', date: null, label: 'Sortie indéfinie', color: 'var(--text-muted)', undated: true });
+  return points.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999'));
+}
+
+// Une ligne par consultant staffé (gagné) + une ligne par candidature non retenue issue d'une
+// opportunité ayant mené à une des prestations de l'entité (le pipeline, pas seulement les
+// gagnants — demandé explicitement pour cette frise).
+function renderSuiviDemandeGroupTimeline(prests) {
+  const el = document.getElementById('sd-timeline');
+  const lanes = [];
+
+  prests.forEach(p => {
+    const c = S.consultants.find(x => x.id === p.consultantId);
+    const header = `<span class="sd-tl-lane-name">${c ? c.name : 'Consultant supprimé'}</span>`;
+    lanes.push({ html: renderTimelineLane(buildPrestationTimelinePoints(p), header, true), firstDate: p.startDate });
+  });
+
+  const oppIds = new Set(prests.map(p => p.opportuniteId).filter(Boolean));
+  S.candidatures.filter(c => oppIds.has(c.opportuniteId) && c.status === 'perdue').forEach(cand => {
+    const c = S.consultants.find(x => x.id === cand.consultantId);
+    const pushPts = (cand.bookPushes || []).map(x => ({ type: 'push', date: x.date, label: 'Push', color: 'var(--blue)' }));
+    const soutPts = (cand.soutenances || []).map(s => ({
+      type: 'soutenance', date: s.date, label: 'Soutenance',
+      color: s.resultat === 'validee' ? 'var(--green)' : s.resultat === 'refusee' ? 'var(--red)' : 'var(--blue)',
+    }));
+    const points = [...pushPts, ...soutPts].sort((a,b) => a.date.localeCompare(b.date));
+    points.push({ type: 'reponse', date: points.length ? points[points.length-1].date : todayStr(), label: 'Non retenu', color: 'var(--red)' });
+    const header = `<span class="sd-tl-lane-name" style="color:var(--text-muted)">${c ? c.name : 'Candidat'} (non retenu)</span>`;
+    lanes.push({ html: renderTimelineLane(points, header, false), firstDate: points[0]?.date || '9999' });
+  });
+
+  lanes.sort((a,b) => a.firstDate.localeCompare(b.firstDate));
+  el.innerHTML = lanes.map(l => l.html).join('');
+}
+
+// Restitue #opportunite-modal-box à son overlay d'origine avant de masquer "Suivre la demande"
+// (mode legacy uniquement — #prest-modal-box n'est plus jamais embarquée, voir mode groupé plus
+// haut) — indispensable pour que la prochaine modale de création (Nouvelle opportunité)
 // retrouve sa boîte à sa place habituelle. Appelée sur tous les chemins de sortie (Annuler,
 // Échap, clic hors modale, Enregistrer, Supprimer).
 function closeSuiviDemande() {
-  const prestBox = document.getElementById('prest-modal-box');
-  const oppBox   = document.getElementById('opportunite-modal-box');
-  prestBox.classList.remove('suivi-demande-embedded');
+  const oppBox = document.getElementById('opportunite-modal-box');
   oppBox.classList.remove('suivi-demande-embedded');
-  document.getElementById('prest-overlay').appendChild(prestBox);
   document.getElementById('opportunite-overlay').appendChild(oppBox);
   suiviDemandePrest = null;
   suiviDemandeOpp   = null;
   closeModal('suivi-demande-overlay');
 }
 
+// suiviDemandePrest est toujours null en mode groupé (jamais de formulaire Prestation embarqué,
+// voir le mode groupé plus haut) : ces 2 fonctions ne font donc quelque chose qu'en mode legacy
+// — en mode groupé, les boutons Annuler/Enregistrer sont de toute façon masqués
+// (setSuiviDemandeFooterMode()), seul "Fermer" (closeSuiviDemande() direct) est visible.
+// returnToSuiviDemande() : no-op sauf si on vient de "Voir l'opportunité d'origine" depuis le
+// mode groupé (viewOriginOpportunite()) — y revient alors automatiquement, pour la continuité
+// Modifier/Réglages/Voir l'opportunité partout pareil.
 function cancelSuiviDemande() {
   const prestDirty = suiviDemandePrest && prestFormState() !== prestModalSnapshot;
   const oppDirty    = suiviDemandeOpp   && oppFormState()   !== oppModalSnapshot;
   if ((prestDirty || oppDirty) && !confirm('Des modifications non enregistrées seront perdues. Annuler quand même ?')) return;
   closeSuiviDemande();
+  returnToSuiviDemande();
 }
 
 function saveSuiviDemande() {
@@ -3277,6 +4147,7 @@ function saveSuiviDemande() {
   if (suiviDemandeOpp   && commitOpportuniteFromForm() === null) return;
   closeSuiviDemande();
   render();
+  returnToSuiviDemande();
   showToast('Demande enregistrée', 'success');
 }
 
@@ -3293,7 +4164,7 @@ function businessDaysBetween(d1, d2) {
 }
 
 // Découpe la mission en segments atomiques : une rupture à chaque changement de TJM/taux
-// d'activité (modalRevisions) ET à chaque révision de coût complet du consultant
+// d'occupation (modalRevisions) ET à chaque révision de coût complet du consultant
 // (consultant.coutCompletRevisions) — les 2 listes de dates sont fusionnées, pas seulement
 // celle du TJM. Avant ce découpage, une révision de coût tombant au milieu d'un segment TJM
 // n'était prise en compte qu'au segment TJM suivant, pas à sa vraie date (bug corrigé le
@@ -3376,7 +4247,7 @@ function computeMissionCaExact() {
 
 // Points pour la sparkline CA/marge de la carte KPI "CA" : CA cumulé à chaque frontière de
 // segment (ligne pleine), et taux de marge propre à chaque segment (ligne en paliers — saute à
-// chaque révision de TJM/taux d'activité OU de coût complet, pas une moyenne lissée).
+// chaque révision de TJM/taux d'occupation OU de coût complet, pas une moyenne lissée).
 function computeMissionCaSparklineData() {
   const segData = buildMissionCaAtomicSegments();
   if (!segData) return null;
@@ -3469,7 +4340,7 @@ function computeSuiviDemandeStatus() {
   return { statusKey, label, effEnd, totalMonths, joursRestants };
 }
 
-// TJM/taux d'activité courants — même calcul que updateBadges() (main.js), carte KPI "TJM".
+// TJM/taux d'occupation courants — même calcul que updateBadges() (main.js), carte KPI "TJM".
 function computeSuiviDemandeTjm() {
   const baseTjm = parseFloat(document.getElementById('f-tjm').value) || null;
   const baseFte = parseInt(document.getElementById('f-fte').value) || null;
@@ -3528,7 +4399,7 @@ function renderSuiviDemandeKpis(prest, opp) {
     cards.push(`<div class="stat-card">
       <div class="stat-label-row"><span class="stat-label">TJM</span></div>
       <div class="stat-value" style="color:var(--accent)">${tjm.curTjm ? tjm.curTjm.toLocaleString('fr-FR') + ' €/j' : '—'}</div>
-      <div class="stat-sub">Activité : ${tjm.curFte || '—'}/5</div>
+      <div class="stat-sub">Occupation : ${tjm.curFte || '—'}/5</div>
     </div>`);
   }
 
@@ -3784,6 +4655,8 @@ const MODAL_CANCEL = {
   'prest-overlay': cancelPrestModal,
   'opportunite-overlay': cancelOpportuniteModal,
   'suivi-demande-overlay': cancelSuiviDemande,
+  'commercial-overlay': cancelCommercialModal,
+  'prestation-reglages-overlay': cancelPrestationReglagesModal,
 };
 let modalTrigger = null;
 
