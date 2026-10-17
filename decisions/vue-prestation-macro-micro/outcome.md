@@ -33,10 +33,22 @@ Après un premier passage utilisateur sur la refonte du 2026-10-12, plusieurs re
 
 **"Activité" renommé "Occupation"/"Taux d'occupation"** partout (labels de formulaire, en-têtes de tableau, cartes KPI, toast d'erreur) — terme jugé mal choisi par les utilisateurs, y compris pour le taux d'occupation période (%) des Statistiques, déjà nommé ainsi en interne dans le code avant ce renommage.
 
+## Livré le 2026-10-16 au 2026-10-19 — chronologie du mode groupé, 3e passe
+
+**Pauses/absences résumées, pas déroulées point par point** : `buildPrestationTimelinePoints()` ne montre plus les absences individuelles sur la frise (les pauses étaient déjà exclues depuis le 2026-10-12). Trois maquettes comparées avant d'implémenter (voir l'artifact "Chronologie prestation — options pause") : un point par pause tient pour 1-2 pauses mais devient illisible à l'échelle réelle (~3 pauses/an, une mission de 3 ans = ~8-9 points quasi identiques noyant démarrage/prolongations/fin) ; un bandeau partagé au-dessus des lignes ne peut pas être rattaché à une date précise d'aucune ligne (pas d'axe de dates commun dans cette frise) et reste trompeur dès 2 pauses. Retenu : deux pastilles résumées par ligne de consultant (`pauseDaysTotal()`/`absenceDaysTotal()`, nouvelle famille CSS `.summary-chip`/`.summary-chip-client`/`.summary-chip-consultant`, contour — documentée dans la skill `ui-coherence-squadra`), bornées à la fenêtre propre de chaque prestation (un consultant arrivé après une pause ne l'hérite pas).
+
+**Bug corrigé — pauses sans `type`** : `addPrestationReglagesPause()` créait les pauses sans `type: 'pause'` depuis la toute première version de la modale Réglages (pas une régression de cette session — un commentaire resté lui aussi incomplet en est la preuve). Conséquence en cascade, repérée via les symptômes ("undefined" sur la frise, pastille absente) puis confirmée dans le code : `activePause()`/`unavailableFraction()` ne reconnaissaient pas non plus ces pauses, donc ni le statut "en pause", ni la réduction de CA/staffing sur les graphiques ne s'appliquaient pour les entités concernées. Corrigé à la source ; les pauses déjà enregistrées avant le correctif restent orphelines (invisibles même en rouvrant Réglages, qui filtre aussi sur `type==='pause'`) — nettoyage manuel documenté pour l'utilisateur (suppression depuis "Modification de la mission", qui ne les protège pas non plus faute de `type`, puis ressaisie).
+
+**Non-retenus toujours après les staffés** : `renderSuiviDemandeGroupTimeline()` triait auparavant toutes les lignes ensemble par date, mélangeant consultants staffés et candidats perdus — un perdu ancien pouvait apparaître avant un staffé récent. Désormais deux groupes triés séparément, staffés toujours affichés en premier ("pas déterminants pour le suivi de la prestation").
+
+**Lignes plus compactes** : les lignes de consultants staffés utilisaient `won:true` (pleine largeur, connecteurs étirés) — passées à `won:false` comme les lignes "non retenu", connecteurs à largeur fixe. Bug de conteneur manquant corrigé au passage : le mode groupé n'enveloppait jamais ses lignes dans `.sd-timeline-lanes` (seul le mode legacy le faisait) — le `gap` entre lignes ne s'appliquait donc à rien, lignes visuellement collées malgré la règle CSS.
+
+**Espacement en `rem`, première exception du projet** : le gap nom↔frise et le gap entre lignes (`.sd-timeline-lane`/`.sd-timeline-lanes`) passent de valeurs en px à `1rem` — pour suivre le texte si la racine grandit un jour (réglage "agrandir le texte", backlog), contrairement au reste de l'espacement du projet encore en px. Décision assumée comme une exception ponctuelle, pas (encore) une généralisation.
+
 ## Vérification
 
-- `node --check main.js`/`server.js` : syntaxe valide après chaque étape, aux deux dates de livraison.
+- `node --check main.js`/`server.js` : syntaxe valide après chaque étape, aux trois dates de livraison.
 - Fichiers statiques et `/api/data` servis sans erreur après chaque redémarrage du serveur.
-- Balance des balises `<div>` vérifiée (247/247 au 2026-10-15), tous les ids référencés en JS confirmés présents en HTML.
+- Balance des balises `<div>` vérifiée (247/247), tous les ids référencés en JS confirmés présents en HTML.
 - `server.js` a changé pendant cette session (ajout de `commerciaux` à l'API, hors scope de cette décision) : vérification backend complète (`verify-squadra-backend`) passée le 2026-10-15 — fichiers statiques, round-trip d'écriture, robustesse JSON invalide, nettoyage des données réelles restaurées à l'identique après test.
-- **Non vérifié** : rendu visuel réel (pas d'outil de navigateur automatisé dans cet environnement) — confirmé au fil de l'eau par l'utilisateur via tests manuels guidés après chaque lot de changements.
+- Rendu visuel réel confirmé par l'utilisateur à chaque lot via tests manuels guidés (pas d'outil de navigateur automatisé dans cet environnement) — y compris la découverte du bug `type` manquant sur les pauses, repéré par l'utilisateur sur une entité réelle puis diagnostiqué dans le code sans jamais lire `data/*.json` directement.

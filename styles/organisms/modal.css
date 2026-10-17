@@ -9,12 +9,16 @@
   border-radius: var(--radius-lg); width: 100%; max-width: 580px; max-height: 92vh;
   display: flex; flex-direction: column; overflow: hidden;
 }
-/* Exception assumée : Opportunité et Prestation sont les 2 étapes d'une même continuité
-   (bouton "Ajouter une opportunité" / "Ajouter une prestation" côte à côte en topbar, lien
-   de navigation dans les 2 sens entre les 2 modales) — elles partagent donc la même largeur,
-   plus large que les autres modales (580px) : l'Opportunité en a besoin pour tracer tout le
-   cycle de vie (N candidatures, chacune avec ses pushs/soutenances) dans une seule fenêtre. */
-#opportunite-modal-box, #prest-modal-box { max-width: 900px; }
+/* Largeur unique 900px pour toutes les modales de saisie satellites de "Suivre la demande"
+   (plein écran, voir #suivi-demande-box plus bas) — Opportunité, Prestation et Réglages de la
+   prestation s'ouvrent et se referment depuis ce même écran central, un aller-retour répété au
+   fil d'une même tâche ; des largeurs différentes à chaque fois cassaient la continuité perçue
+   (retour utilisateur du 2026-10-19, décisions/largeur-modales-saisie à tracer). Opportunité et
+   Prestation en avaient de toute façon besoin pour leur contenu dense (N candidatures / historique
+   de tarification) ; Réglages est plus léger mais rejoint la même largeur pour la cohérence du
+   parcours plutôt que pour son propre contenu — voir .sd-fields-3col ci-dessous pour le nombre de
+   colonnes, qui lui reste adapté à chaque modale. */
+#opportunite-modal-box, #prest-modal-box, #prestation-reglages-modal-box, #suivi-demande-box { max-width: 900px; }
 
 .modal-header {
   padding: 16px 20px; border-bottom: 1px solid var(--border);
@@ -37,10 +41,15 @@
   display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0;
 }
 
-/* "Suivre la demande" (main.js openSuiviDemande()) : overlay plein écran plutôt que boîte
-   centrée, et bloc Prestation/Opportunité embarqué tel quel (mêmes boîtes, même id, juste
-   déplacées) — un seul jeu d'actions (Annuler/Enregistrer) doit rester visible, celui de
-   l'overlay plein écran ; le bouton Supprimer de chaque bloc reste, lui, utile en place. */
+/* "Suivre la demande" (main.js openSuiviDemande()) : plein écran UNIQUEMENT en mode groupé
+   (densité réelle — KPI, graphiques, tableau, frise), posé/retiré par JS
+   (openSuiviDemandeGroup()/openSuiviDemandeLegacy()) plutôt que statique dans le HTML (changé le
+   2026-10-19 — avant cette date, les 2 modes étaient toujours plein écran). En mode legacy (pas
+   encore de prestation), le contenu est le même #opportunite-modal-box embarqué que la modale
+   "Ajouter une opportunité" standalone — pas de raison qu'il soit plus large qu'elle, #suivi-
+   demande-box retombe donc sur les 900px communs ci-dessus. Tant qu'un seul jeu d'actions
+   (Annuler/Enregistrer) doit rester visible (celui de l'overlay), le bouton Supprimer de chaque
+   bloc embarqué reste, lui, utile en place — ce comportement ne dépend pas de la largeur. */
 #suivi-demande-box.overlay-fullscreen {
   max-width: none; width: 100%; height: 100%; max-height: 100vh; border-radius: 0;
 }
@@ -63,20 +72,32 @@
 #prest-summary-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
 .suivi-demande-embedded #prest-summary-row { display: none; }
 
-/* Sur "Suivre la demande" uniquement (plein écran, largeur disponible), "Modalités de la
-   prestation"/"Modalités de l'opportunité"/"Tarification" passent de 2 à 3 colonnes — pas dans
-   les modales de création (#tjm-fte-row/#of-tjm... restent en 2 colonnes là-bas, .form-row
-   n'étant pas dans un .sd-fields-3col hors de ce contexte). .form-row garde sa grille à 2
-   colonnes normalement (display:contents ici la neutralise) : ses .form-group deviennent des
-   items directs de la grille à 3 colonnes, qui se répartissent dans l'ordre du HTML — un label
-   intercalaire (ex: "Dates") prend toute la largeur pour rester un vrai repère visuel, pas un
-   champ de plus dans la grille. */
-.suivi-demande-embedded .sd-fields-3col {
+/* 3 colonnes pour "Modalités de la prestation"/"Modalités de l'opportunité"/"Tarification"
+   (Opportunité) — plus seulement quand embarquée dans "Suivre la demande" (élargi le 2026-10-19,
+   maintenant que ces modales font 900px même en standalone, voir plus haut). Testé avant d'être
+   généralisé : 3 colonnes se lit bien avec un nombre de champs suffisant (Opportunité, Prestation
+   — 6 à 9 champs) mais laissait un vide disgracieux sur un formulaire plus court (Réglages de la
+   prestation, 5 champs) — Réglages garde donc .form-row à 2 colonnes, pas .sd-fields-3col ; le
+   choix du nombre de colonnes reste propre à chaque modale, seule la largeur extérieure (900px,
+   ci-dessus) est devenue commune. #tjm-fte-row (Prestation) reste volontairement à 2 colonnes
+   aussi, jamais dans un .sd-fields-3col. .form-row garde sa grille à 2 colonnes normalement
+   (display:contents ici la neutralise) : ses .form-group deviennent des items directs de la
+   grille à 3 colonnes, qui se répartissent dans l'ordre du HTML — un label intercalaire (ex:
+   "Dates") prend toute la largeur pour rester un vrai repère visuel, pas un champ de plus dans
+   la grille. */
+.sd-fields-3col {
   display: grid; grid-template-columns: repeat(3, 1fr);
   column-gap: 12px; row-gap: 0; align-items: start;
 }
-.suivi-demande-embedded .sd-fields-3col .form-row { display: contents; }
-.suivi-demande-embedded .sd-fields-3col > .form-label { grid-column: 1 / -1; }
+.sd-fields-3col .form-row { display: contents; }
+.sd-fields-3col > .form-label { grid-column: 1 / -1; }
+
+/* En dessous de 900px (même seuil que partout ailleurs dans le projet, voir tokens.css), les
+   grilles à colonnes multiples repassent à 1 seule colonne — plutôt que de comprimer des champs
+   déjà pensés pour une largeur confortable (2026-10-19). */
+@media (max-width: 900px) {
+  .form-row, .form-row-3, .form-row-4, .sd-fields-3col { grid-template-columns: 1fr; }
+}
 
 /* Frise chronologique de "Suivre la demande" (main.js renderSuiviDemandeTimeline()) : un point
    neutre "Détection" commun, puis une ligne (lane) par candidat. Couleur réservée aux points ;
@@ -90,11 +111,17 @@
    est ce qui permet à chaque carte de lane de se limiter à sa propre largeur de contenu par
    défaut (comportement non-stretch standard de flexbox) ; .sd-tl-lane-won la repasse à 100%. */
 .sd-timeline-lanes {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
+  /* gap en rem, même exception volontaire que .sd-timeline-lane (voir plus bas) — remonté de
+     12px à 1rem (16px) le 2026-10-18, les lignes étaient perçues comme collées. */
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1rem;
   padding-left: 18px; border-left: 2px solid var(--border);
 }
 .sd-timeline-lane {
-  display: flex; flex-direction: column; gap: 8px; position: relative;
+  /* gap en rem (pas px) : espace entre l'en-tête de ligne (nom + repères résumés, voir
+     .sd-tl-lane-chips) et la frise de points — suit le texte si la racine grandit (futur réglage
+     "agrandir le texte", backlog), contrairement au reste de l'espacement du projet encore en px
+     (exception volontaire du 2026-10-17, pas encore généralisée). */
+  display: flex; flex-direction: column; gap: 1rem; position: relative;
   background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-lg);
   padding: 12px 16px; max-width: 100%;
 }
@@ -104,6 +131,7 @@
 }
 .sd-tl-lane-head { display: flex; align-items: center; gap: 8px; }
 .sd-tl-lane-name { font-size: var(--text-xs); color: var(--text); font-weight: 700; }
+.sd-tl-lane-chips { display: flex; gap: 8px; }
 
 /* Lane non gagnante : pas de width — inline-flex se limite naturellement à la largeur de son
    contenu (aucun nombre d'étapes n'est fixé à l'avance). La lane gagnante occupe toute la

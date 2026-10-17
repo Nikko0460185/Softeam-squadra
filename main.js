@@ -3534,7 +3534,7 @@ function markCandidatureWonInModal(candId) {
 // (suiviDemandeReturnEntity/returnToSuiviDemande(), mécanique commune à cette modale et à
 // l'édition individuelle d'un consultant depuis la liste micro).
 let suiviDemandeReturnEntity = null; // {client, clientService} | null
-let modalPrestationReglagesPauses = []; // [{id, date, resumeDate?}]
+let modalPrestationReglagesPauses = []; // [{id, type:'pause', date, resumeDate?}]
 
 function returnToSuiviDemande() {
   if (!suiviDemandeReturnEntity) return;
@@ -3580,7 +3580,7 @@ function addPrestationReglagesPause() {
     showToast('La date de reprise doit être après la date d\'effet', 'error'); return;
   }
   modalPrestationReglagesPauses = modalPrestationReglagesPauses.filter(e => e.date !== date);
-  modalPrestationReglagesPauses.push({ id: genId(), date, ...(resumeDate ? { resumeDate } : {}) });
+  modalPrestationReglagesPauses.push({ id: genId(), type: 'pause', date, ...(resumeDate ? { resumeDate } : {}) });
   modalPrestationReglagesPauses.sort((a, b) => a.date.localeCompare(b.date));
   document.getElementById('pr-pause-date').value   = '';
   document.getElementById('pr-pause-resume').value = '';
@@ -3720,6 +3720,10 @@ function openSuiviDemandeLegacy(opp, trigger) {
   renderSuiviDemandeTimeline(null, suiviDemandeOpp);
   setSuiviDemandeFooterMode('legacy');
 
+  // Même contenu que la modale "Ajouter une opportunité" standalone (même boîte embarquée telle
+  // quelle) : même largeur (900px), pas de plein écran — réservé au mode groupé, seul à avoir une
+  // densité qui le justifie (2026-10-19).
+  document.getElementById('suivi-demande-box').classList.remove('overlay-fullscreen');
   document.getElementById('suivi-demande-overlay').classList.add('open');
   openModalA11y('suivi-demande-overlay');
   modalTrigger = trigger;
@@ -3755,6 +3759,10 @@ function openSuiviDemandeGroup(prest, trigger) {
   renderSuiviDemandeGroupOppLinks(prests);
   setSuiviDemandeFooterMode('group');
 
+  // Plein écran uniquement ici (densité réelle — KPI, graphiques, tableau, frise) — voir
+  // openSuiviDemandeLegacy() qui retire cette classe pour rester à 900px, même largeur que le
+  // reste des modales de saisie.
+  document.getElementById('suivi-demande-box').classList.add('overlay-fullscreen');
   document.getElementById('suivi-demande-overlay').classList.add('open');
   openModalA11y('suivi-demande-overlay');
   modalTrigger = trigger;
@@ -4060,8 +4068,11 @@ function buildStaffingTableHtml(items) {
 
 // Mêmes points que buildMissionTimelinePoints() (démarrage → événements de mission → fin), mais
 // depuis les champs stockés de la prestation plutôt que d'un formulaire ouvert (cette vue n'en
-// embarque jamais) — plus un point par absence individuelle du consultant (pas les pauses,
-// déjà résumées dans les KPI macro).
+// embarque jamais). Pauses ET absences individuelles n'y figurent plus point par point (retiré le
+// 2026-10-17) : sur une mission longue de plusieurs années, ~3 pauses/an rendent la frise
+// illisible (une dizaine de points quasi identiques noient démarrage/prolongations/fin) — elles
+// sont désormais résumées en repères cumulés attachés à l'en-tête de ligne, voir
+// pauseDaysTotal()/absenceDaysTotal() et renderSuiviDemandeGroupTimeline().
 function buildPrestationTimelinePoints(p) {
   const points = [];
   if (p.startDate) points.push({ type: 'demarrage', date: p.startDate, label: 'Démarrage', color: 'var(--accent)' });
@@ -4069,12 +4080,6 @@ function buildPrestationTimelinePoints(p) {
     type: e.type, date: e.date, label: MISSION_EVENT_LABELS[e.type] || e.type,
     color: e.type === 'prolongation' ? 'var(--orange)' : 'var(--red)',
   }));
-  const consultant = S.consultants.find(c => c.id === p.consultantId);
-  (consultant?.absences || []).forEach(a => {
-    const days = Math.round((new Date(a.endDate+'T00:00:00') - new Date(a.startDate+'T00:00:00')) / 86400000) + 1;
-    const label = a.period ? `Absence (${a.period === 'matin' ? 'matin' : 'après-midi'})` : `Absence (${days} j)`;
-    points.push({ type: 'absence', date: a.startDate, label, color: 'var(--purple)' });
-  });
   const effEnd = effectiveEnd(p);
   points.push(effEnd
     ? { type: 'fin', date: effEnd, label: 'Date de fin', color: 'var(--text-dim)' }
@@ -4082,17 +4087,69 @@ function buildPrestationTimelinePoints(p) {
   return points.sort((a,b) => (a.date||'9999').localeCompare(b.date||'9999'));
 }
 
+// Jours calendaires cumulés de pause (missionEvents type 'pause'), sur la seule fenêtre de cette
+// prestation (une pause propagée à toute l'entité ne compte pour un consultant que si sa propre
+// présence recouvre cette fenêtre — ex: un consultant arrivé après coup n'est pas concerné).
+// Durée simple en jours calendaires, pas une fraction de jours ouvrés (contrairement à
+// unavailableFraction(), pensée pour le CA) : ici on répond à "combien de jours cumulés", pas
+// "quelle part de la facturation ça a mangé". Une pause encore en cours (pas de resumeDate) compte
+// jusqu'à aujourd'hui.
+function pauseDaysTotal(p) {
+  const today = todayStr();
+  const pEnd = effectiveEnd(p) || today;
+  return (p.missionEvents || [])
+    .filter(e => e.type === 'pause' && e.date >= p.startDate && e.date <= pEnd)
+    .reduce((sum, e) => {
+      const end = e.resumeDate || today;
+      return sum + Math.max(0, Math.round((new Date(end+'T00:00:00') - new Date(e.date+'T00:00:00')) / 86400000));
+    }, 0);
+}
+
+// Jours calendaires cumulés d'absence individuelle du consultant, sur la seule fenêtre de cette
+// prestation (les absences d'une autre mission du même consultant ne comptent pas ici — même
+// principe de fenêtre que pauseDaysTotal()). Une demi-journée (a.period défini) compte 0,5 j.
+function absenceDaysTotal(p, consultant) {
+  if (!consultant?.absences?.length) return 0;
+  const pStart = p.startDate, pEnd = effectiveEnd(p) || todayStr();
+  return consultant.absences.reduce((sum, a) => {
+    if (a.endDate < pStart || a.startDate > pEnd) return sum;
+    if (a.period) return sum + 0.5;
+    return sum + Math.round((new Date(a.endDate+'T00:00:00') - new Date(a.startDate+'T00:00:00')) / 86400000) + 1;
+  }, 0);
+}
+
+// "24" ou "9.5", jamais "9.0" — cohérent avec la convention taux d'occupation (0,25/0,5/0,75/1)
+// déjà utilisée ailleurs dans l'outil pour une demi-journée.
+function fmtDaysCount(n) {
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
 // Une ligne par consultant staffé (gagné) + une ligne par candidature non retenue issue d'une
 // opportunité ayant mené à une des prestations de l'entité (le pipeline, pas seulement les
-// gagnants — demandé explicitement pour cette frise).
+// gagnants — demandé explicitement pour cette frise). Les non-retenus sont toujours affichés
+// APRÈS tous les consultants staffés (2026-10-18) — ils ne sont pas déterminants pour le suivi de
+// la prestation elle-même, mélanger les deux par simple date (comme avant) pouvait faire remonter
+// un candidat perdu ancien avant un consultant staffé plus récent. Tri par date à l'intérieur de
+// chaque groupe, pas entre les deux groupes.
 function renderSuiviDemandeGroupTimeline(prests) {
   const el = document.getElementById('sd-timeline');
-  const lanes = [];
+  const staffedLanes = [];
+  const perduLanes = [];
 
   prests.forEach(p => {
     const c = S.consultants.find(x => x.id === p.consultantId);
-    const header = `<span class="sd-tl-lane-name">${c ? c.name : 'Consultant supprimé'}</span>`;
-    lanes.push({ html: renderTimelineLane(buildPrestationTimelinePoints(p), header, true), firstDate: p.startDate });
+    const pauseDays    = pauseDaysTotal(p);
+    const absenceDays  = absenceDaysTotal(p, c);
+    const chips = [
+      pauseDays   > 0 ? `<span class="summary-chip summary-chip-client">Pause client · ${fmtDaysCount(pauseDays)} j cumulés</span>` : '',
+      absenceDays > 0 ? `<span class="summary-chip summary-chip-consultant">Absence consultant · ${fmtDaysCount(absenceDays)} j cumulés</span>` : '',
+    ].filter(Boolean).join('');
+    const header = `<span class="sd-tl-lane-name">${c ? c.name : 'Consultant supprimé'}</span>`
+      + (chips ? `<span class="sd-tl-lane-chips" style="margin-left:auto">${chips}</span>` : '');
+    // won:false (pas de pleine largeur) — connecteurs à largeur fixe plutôt qu'étirés sur toute la
+    // largeur de la modale, pour une frise plus compacte (2026-10-18, retour utilisateur : la
+    // pleine largeur éloignait les points les uns des autres sans raison).
+    staffedLanes.push({ html: renderTimelineLane(buildPrestationTimelinePoints(p), header, false), firstDate: p.startDate });
   });
 
   const oppIds = new Set(prests.map(p => p.opportuniteId).filter(Boolean));
@@ -4106,11 +4163,15 @@ function renderSuiviDemandeGroupTimeline(prests) {
     const points = [...pushPts, ...soutPts].sort((a,b) => a.date.localeCompare(b.date));
     points.push({ type: 'reponse', date: points.length ? points[points.length-1].date : todayStr(), label: 'Non retenu', color: 'var(--red)' });
     const header = `<span class="sd-tl-lane-name" style="color:var(--text-muted)">${c ? c.name : 'Candidat'} (non retenu)</span>`;
-    lanes.push({ html: renderTimelineLane(points, header, false), firstDate: points[0]?.date || '9999' });
+    perduLanes.push({ html: renderTimelineLane(points, header, false), firstDate: points[0]?.date || '9999' });
   });
 
-  lanes.sort((a,b) => a.firstDate.localeCompare(b.firstDate));
-  el.innerHTML = lanes.map(l => l.html).join('');
+  staffedLanes.sort((a,b) => a.firstDate.localeCompare(b.firstDate));
+  perduLanes.sort((a,b) => a.firstDate.localeCompare(b.firstDate));
+  // .sd-timeline-lanes manquait ici (seul le mode legacy l'avait) : sans ce conteneur, le gap
+  // entre lignes (.sd-timeline-lanes{gap:1rem}) ne s'appliquait à rien — les lignes se touchaient
+  // malgré la règle CSS, corrigé le 2026-10-19.
+  el.innerHTML = `<div class="sd-timeline-lanes">${[...staffedLanes, ...perduLanes].map(l => l.html).join('')}</div>`;
 }
 
 // Restitue #opportunite-modal-box à son overlay d'origine avant de masquer "Suivre la demande"

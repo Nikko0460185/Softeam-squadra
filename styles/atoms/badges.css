@@ -32,3 +32,20 @@
 .nature-forfait        { color: var(--purple); }
 .nature-projet_interne { color: var(--yellow); }
 .nature-opportunite    { color: var(--blue); }
+
+/* 3e famille de pastille, ajoutée le 2026-10-17 pour la frise chronologique groupée de "Suivre
+   la demande" (une ligne par consultant staffé) — distincte de .status-pill (fond plein, UN état
+   à la fois) et des couleurs .nature-* (texte simple, un type) : ici un total cumulé (jours de
+   pause/absence) attaché à une ligne. Contour fin repris de l'ancien .nature-badge (retiré le
+   2026-10-15) — en toute connaissance de cause pour un rôle différent, pas un doublon de pilule. */
+.summary-chip {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: var(--text-2xs); border-radius: 999px; padding: 2px 10px;
+  background: transparent; border: 1px solid currentColor; flex-shrink: 0;
+}
+/* Pause = décision côté client (couleur distincte, cohérente avec .pill-en_pause/bleu ailleurs
+   dans l'outil) ; absence = décision côté consultant (neutre, pas de couleur dédiée — distingue
+   visuellement "le client a arrêté" de "la personne était absente" sans leur donner le même
+   poids visuel). */
+.summary-chip-client     { color: var(--blue); }
+.summary-chip-consultant { color: var(--text); border-color: var(--text-muted); }
